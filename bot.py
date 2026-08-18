@@ -13,23 +13,10 @@ TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_WEB_URL = "https://www.themoviedb.org"
 
-intents = discord.Intents.default()
 
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents
-)
-
-
-@bot.event
-async def on_ready():
-    print(f"PremiereBot is online as {bot.user}")
-
-
-@bot.event
-async def setup_hook():
-    try:
-        synced = await bot.tree.sync()
+class PremiereBot(commands.Bot):
+    async def setup_hook(self):
+        synced = await self.tree.sync()
 
         print(
             f"Synced {len(synced)} command(s) with Discord."
@@ -40,12 +27,20 @@ async def setup_hook():
                 f"Synced command: /{command.name}"
             )
 
-    except Exception as error:
-        print(
-            f"ERROR syncing Discord commands: {error}"
-        )
 
-        raise
+intents = discord.Intents.default()
+
+bot = PremiereBot(
+    command_prefix="!",
+    intents=intents
+)
+
+
+@bot.event
+async def on_ready():
+    print(
+        f"PremiereBot is online as {bot.user}"
+    )
 
 
 async def fetch_tmdb(
@@ -222,7 +217,6 @@ async def get_upcoming(
             value="tv"
         ),
     ],
-
     timeframe=[
         app_commands.Choice(
             name="Week",
@@ -253,139 +247,4 @@ async def upcoming(
 
     time_label = (
         "Next 7 Days"
-        if time_value == "week"
-        else "Next 30 Days"
-    )
-
-    try:
-        results = await get_upcoming(
-            media_value,
-            time_value
-        )
-
-    except Exception as error:
-
-        print(
-            f"TMDb error: {error}"
-        )
-
-        await interaction.followup.send(
-            "PremiereBot couldn't retrieve "
-            "release information from TMDb "
-            "right now."
-        )
-
-        return
-
-    if not results:
-
-        await interaction.followup.send(
-            f"No upcoming "
-            f"{media_label.lower()} "
-            f"were found for the "
-            f"{time_label.lower()}."
-        )
-
-        return
-
-    embed = discord.Embed(
-        title=f"🎬 Upcoming {media_label}",
-        description=f"**{time_label}**"
-    )
-
-    for item in results[:10]:
-
-        title = (
-            item.get("title")
-            or item.get("name")
-            or "Untitled"
-        )
-
-        if media_value == "movie":
-            date_string = item.get(
-                "release_date"
-            )
-        else:
-            date_string = item.get(
-                "first_air_date"
-            )
-
-        tmdb_id = item.get("id")
-
-        media_path = (
-            "movie"
-            if media_value == "movie"
-            else "tv"
-        )
-
-        if tmdb_id:
-            title_display = (
-                f"[{title}]"
-                f"({TMDB_WEB_URL}/"
-                f"{media_path}/"
-                f"{tmdb_id})"
-            )
-        else:
-            title_display = title
-
-        overview = (
-            item.get("overview")
-            or ""
-        ).strip()
-
-        if len(overview) > 150:
-            overview = (
-                overview[:147].rstrip()
-                + "..."
-            )
-
-        value = make_discord_date(
-            date_string
-        )
-
-        if overview:
-            value += (
-                f"\n{overview}"
-            )
-
-        embed.add_field(
-            name=title_display,
-            value=value,
-            inline=False
-        )
-
-    if len(results) > 10:
-
-        footer_text = (
-            f"Showing 10 of "
-            f"{len(results)} results "
-            f"• Data provided by TMDb"
-        )
-
-    else:
-
-        footer_text = (
-            "Data provided by TMDb"
-        )
-
-    embed.set_footer(
-        text=footer_text
-    )
-
-    await interaction.followup.send(
-        embed=embed
-    )
-
-
-if not DISCORD_TOKEN:
-    raise RuntimeError(
-        "DISCORD_TOKEN is missing."
-    )
-
-if not TMDB_API_KEY:
-    raise RuntimeError(
-        "TMDB_API_KEY is missing."
-    )
-
-
-bot.run(DISCORD_TOKEN)
+        if time_value ==
