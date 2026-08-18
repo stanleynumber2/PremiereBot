@@ -18,7 +18,20 @@ intents = discord.Intents.default()
 
 class PremiereBot(commands.Bot):
     async def setup_hook(self):
-        await self.tree.sync()
+        try:
+            synced = await self.tree.sync()
+            print(
+                f"Synced {len(synced)} command(s) with Discord."
+            )
+
+            for command in synced:
+                print(f"Synced command: /{command.name}")
+
+        except Exception as error:
+            print(
+                f"ERROR syncing Discord commands: {error}"
+            )
+            raise
 
 
 bot = PremiereBot(
@@ -29,10 +42,16 @@ bot = PremiereBot(
 
 @bot.event
 async def on_ready():
-    print(f"PremiereBot is online as {bot.user}")
+    print(
+        f"PremiereBot is online as {bot.user}"
+    )
 
 
-async def fetch_tmdb(endpoint: str, params: dict) -> dict:
+async def fetch_tmdb(
+    endpoint: str,
+    params: dict
+) -> dict:
+
     params = {
         **params,
         "api_key": TMDB_API_KEY,
@@ -49,15 +68,20 @@ async def fetch_tmdb(endpoint: str, params: dict) -> dict:
 
             if response.status != 200:
                 body = await response.text()
+
                 raise RuntimeError(
-                    f"TMDb returned HTTP {response.status}: "
+                    f"TMDb returned HTTP "
+                    f"{response.status}: "
                     f"{body[:300]}"
                 )
 
             return await response.json()
 
 
-def make_discord_date(date_string: str) -> str:
+def make_discord_date(
+    date_string: str
+) -> str:
+
     release_date = datetime.strptime(
         date_string,
         "%Y-%m-%d"
@@ -66,9 +90,14 @@ def make_discord_date(date_string: str) -> str:
         tzinfo=timezone.utc
     )
 
-    unix_time = int(release_date.timestamp())
+    unix_time = int(
+        release_date.timestamp()
+    )
 
-    return f"<t:{unix_time}:D> • <t:{unix_time}:R>"
+    return (
+        f"<t:{unix_time}:D> • "
+        f"<t:{unix_time}:R>"
+    )
 
 
 async def get_upcoming(
@@ -76,13 +105,22 @@ async def get_upcoming(
     timeframe: str
 ) -> list[dict]:
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(
+        timezone.utc
+    ).date()
 
-    days = 7 if timeframe == "week" else 30
+    days = (
+        7
+        if timeframe == "week"
+        else 30
+    )
 
-    end_date = today + timedelta(days=days)
+    end_date = (
+        today + timedelta(days=days)
+    )
 
     if media_type == "movie":
+
         endpoint = "discover/movie"
         date_field = "release_date"
 
@@ -94,23 +132,33 @@ async def get_upcoming(
             # 3 = Theatrical
             "with_release_type": "2|3",
 
-            "release_date.gte": today.isoformat(),
-            "release_date.lte": end_date.isoformat(),
+            "release_date.gte":
+                today.isoformat(),
 
-            "sort_by": "release_date.asc",
+            "release_date.lte":
+                end_date.isoformat(),
+
+            "sort_by":
+                "release_date.asc",
         }
 
     else:
+
         endpoint = "discover/tv"
         date_field = "first_air_date"
 
         params = {
-            "first_air_date.gte": today.isoformat(),
-            "first_air_date.lte": end_date.isoformat(),
+            "first_air_date.gte":
+                today.isoformat(),
 
-            "sort_by": "first_air_date.asc",
+            "first_air_date.lte":
+                end_date.isoformat(),
 
-            "include_null_first_air_dates": "false",
+            "sort_by":
+                "first_air_date.asc",
+
+            "include_null_first_air_dates":
+                "false",
         }
 
     data = await fetch_tmdb(
@@ -120,9 +168,14 @@ async def get_upcoming(
 
     results = []
 
-    for item in data.get("results", []):
+    for item in data.get(
+        "results",
+        []
+    ):
 
-        date_string = item.get(date_field)
+        date_string = item.get(
+            date_field
+        )
 
         if not date_string:
             continue
@@ -136,8 +189,13 @@ async def get_upcoming(
         except ValueError:
             continue
 
-        # Extra safety check.
-        if today <= item_date <= end_date:
+        # Safety check:
+        # Never allow old releases.
+        if (
+            today
+            <= item_date
+            <= end_date
+        ):
             results.append(item)
 
     return results
@@ -145,11 +203,18 @@ async def get_upcoming(
 
 @app_commands.command(
     name="upcoming",
-    description="See upcoming movie or TV releases."
+    description=(
+        "See upcoming movie "
+        "or TV releases."
+    )
 )
 @app_commands.describe(
-    media_type="Choose movies or TV.",
-    timeframe="Choose week or month."
+    media_type=(
+        "Choose movies or TV."
+    ),
+    timeframe=(
+        "Choose week or month."
+    )
 )
 @app_commands.rename(
     media_type="type",
@@ -166,6 +231,7 @@ async def get_upcoming(
             value="tv"
         ),
     ],
+
     timeframe=[
         app_commands.Choice(
             name="Week",
@@ -179,8 +245,10 @@ async def get_upcoming(
 )
 async def upcoming(
     interaction: discord.Interaction,
-    media_type: app_commands.Choice[str],
-    timeframe: app_commands.Choice[str],
+    media_type:
+        app_commands.Choice[str],
+    timeframe:
+        app_commands.Choice[str],
 ):
 
     await interaction.response.defer()
@@ -207,26 +275,38 @@ async def upcoming(
         )
 
     except Exception as error:
-        print(f"TMDb error: {error}")
+
+        print(
+            f"TMDb error: {error}"
+        )
 
         await interaction.followup.send(
-            "PremiereBot couldn't retrieve release "
-            "information from TMDb right now."
+            "PremiereBot couldn't retrieve "
+            "release information from TMDb "
+            "right now."
         )
 
         return
 
     if not results:
+
         await interaction.followup.send(
-            f"No upcoming {media_label.lower()} "
-            f"were found for the {time_label.lower()}."
+            f"No upcoming "
+            f"{media_label.lower()} "
+            f"were found for the "
+            f"{time_label.lower()}."
         )
 
         return
 
     embed = discord.Embed(
-        title=f"🎬 Upcoming {media_label}",
-        description=f"**{time_label}**"
+        title=(
+            f"🎬 Upcoming "
+            f"{media_label}"
+        ),
+        description=(
+            f"**{time_label}**"
+        )
     )
 
     for item in results[:10]:
@@ -237,11 +317,14 @@ async def upcoming(
             or "Untitled"
         )
 
-        date_string = (
-            item.get("release_date")
-            if media_value == "movie"
-            else item.get("first_air_date")
-        )
+        if media_value == "movie":
+            date_string = item.get(
+                "release_date"
+            )
+        else:
+            date_string = item.get(
+                "first_air_date"
+            )
 
         tmdb_id = item.get("id")
 
@@ -254,7 +337,9 @@ async def upcoming(
         if tmdb_id:
             title_display = (
                 f"[{title}]"
-                f"({TMDB_WEB_URL}/{media_path}/{tmdb_id})"
+                f"({TMDB_WEB_URL}/"
+                f"{media_path}/"
+                f"{tmdb_id})"
             )
         else:
             title_display = title
@@ -275,7 +360,9 @@ async def upcoming(
         )
 
         if overview:
-            value += f"\n{overview}"
+            value += (
+                f"\n{overview}"
+            )
 
         embed.add_field(
             name=title_display,
@@ -284,12 +371,18 @@ async def upcoming(
         )
 
     if len(results) > 10:
+
         footer_text = (
-            f"Showing 10 of {len(results)} results "
+            f"Showing 10 of "
+            f"{len(results)} results "
             f"• Data provided by TMDb"
         )
+
     else:
-        footer_text = "Data provided by TMDb"
+
+        footer_text = (
+            "Data provided by TMDb"
+        )
 
     embed.set_footer(
         text=footer_text
