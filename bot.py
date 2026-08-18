@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 4.3")
+print("PremiereBot code version: 4.2")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -1391,18 +1391,13 @@ class ReleaseBrowser(
         self
     ):
 
-        # Both arrows stay active when
-        # there is more than one page.
-        has_multiple_pages = (
-            self.total_pages > 1
-        )
-
         self.previous_button.disabled = (
-            not has_multiple_pages
+            self.page <= 0
         )
 
         self.next_button.disabled = (
-            not has_multiple_pages
+            self.page
+            >= self.total_pages - 1
         )
 
         self.page_button.label = (
@@ -1457,11 +1452,8 @@ class ReleaseBrowser(
         button: discord.ui.Button
     ):
 
-        # Wrap page 1 back to the
-        # final page automatically.
-        self.page = (
-            self.page - 1
-        ) % self.total_pages
+        if self.page > 0:
+            self.page -= 1
 
         self.update_buttons()
 
@@ -1497,11 +1489,11 @@ class ReleaseBrowser(
         button: discord.ui.Button
     ):
 
-        # Wrap the final page back
-        # around to page 1.
-        self.page = (
-            self.page + 1
-        ) % self.total_pages
+        if (
+            self.page
+            < self.total_pages - 1
+        ):
+            self.page += 1
 
         self.update_buttons()
 
@@ -1542,18 +1534,13 @@ class SearchBrowser(
         self
     ):
 
-        # Search results loop in both
-        # directions as well.
-        has_multiple_pages = (
-            self.total_pages > 1
-        )
-
         self.previous_button.disabled = (
-            not has_multiple_pages
+            self.page <= 0
         )
 
         self.next_button.disabled = (
-            not has_multiple_pages
+            self.page
+            >= self.total_pages - 1
         )
 
         self.page_button.label = (
@@ -1607,9 +1594,8 @@ class SearchBrowser(
         button: discord.ui.Button
     ):
 
-        self.page = (
-            self.page - 1
-        ) % self.total_pages
+        if self.page > 0:
+            self.page -= 1
 
         self.update_buttons()
 
@@ -1645,9 +1631,11 @@ class SearchBrowser(
         button: discord.ui.Button
     ):
 
-        self.page = (
-            self.page + 1
-        ) % self.total_pages
+        if (
+            self.page
+            < self.total_pages - 1
+        ):
+            self.page += 1
 
         self.update_buttons()
 
