@@ -1,5 +1,4 @@
 import os
-import math
 from datetime import datetime, timedelta, timezone
 
 import aiohttp
@@ -7,7 +6,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 3.0")
+print("PremiereBot code version: 3.1")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -16,9 +15,7 @@ DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID")
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_WEB_URL = "https://www.themoviedb.org"
-TMDB_IMAGE_URL = "https://image.tmdb.org/t/p/w500"
-
-ITEMS_PER_PAGE = 3
+TMDB_IMAGE_URL = "https://image.tmdb.org/t/p/w780"
 
 
 if not DISCORD_TOKEN:
@@ -40,33 +37,21 @@ class PremiereClient(discord.Client):
         super().__init__(
             intents=discord.Intents.default()
         )
-
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-
         print("PremiereBot setup started.")
 
-        self.tree.copy_global_to(
-            guild=GUILD
-        )
+        self.tree.copy_global_to(guild=GUILD)
+        synced = await self.tree.sync(guild=GUILD)
 
-        synced = await self.tree.sync(
-            guild=GUILD
-        )
-
-        print(
-            f"Synced {len(synced)} guild command(s)."
-        )
+        print(f"Synced {len(synced)} guild command(s).")
 
         for command in synced:
             print(f"Synced: /{command.name}")
 
     async def on_ready(self):
-
-        print(
-            f"PremiereBot online as {self.user}"
-        )
+        print(f"PremiereBot online as {self.user}")
 
 
 client = PremiereClient()
@@ -86,9 +71,7 @@ async def fetch_tmdb(
         "language": "en-US",
     }
 
-    timeout = aiohttp.ClientTimeout(
-        total=15
-    )
+    timeout = aiohttp.ClientTimeout(total=15)
 
     async with aiohttp.ClientSession(
         timeout=timeout
@@ -100,7 +83,6 @@ async def fetch_tmdb(
         ) as response:
 
             if response.status != 200:
-
                 body = await response.text()
 
                 raise RuntimeError(
@@ -130,28 +112,22 @@ def format_runtime(
     runtime = None
 
     if media_type == "movie":
-
-        runtime = details.get(
-            "runtime"
-        )
+        runtime = details.get("runtime")
 
     else:
-
-        runtimes = details.get(
-            "episode_run_time"
-        ) or []
+        runtimes = (
+            details.get("episode_run_time")
+            or []
+        )
 
         if runtimes:
             runtime = runtimes[0]
 
-
     if not runtime:
         return "Runtime unavailable"
 
-
     hours = runtime // 60
     minutes = runtime % 60
-
 
     if hours and minutes:
         return f"{hours}h {minutes}m"
@@ -162,30 +138,40 @@ def format_runtime(
     return f"{minutes}m"
 
 
-def format_genres(
-    details: dict
-) -> str:
+def format_genres(details: dict) -> str:
 
     genres = [
         genre.get("name")
-        for genre in details.get(
-            "genres",
-            []
-        )
+        for genre in details.get("genres", [])
         if genre.get("name")
     ]
 
     if not genres:
         return "Genre unavailable"
 
-    return " • ".join(
-        genres[:3]
+    return " • ".join(genres[:3])
+
+
+def format_release_date(
+    date_string: str
+) -> str:
+
+    date = datetime.strptime(
+        date_string,
+        "%Y-%m-%d"
+    ).replace(
+        hour=12,
+        tzinfo=timezone.utc
     )
 
+    unix_time = int(date.timestamp())
 
-def discord_date(
+    return f"<t:{unix_time}:D>"
+
+
+def format_countdown(
     date_string: str
-) -> tuple[str, str]:
+) -> str:
 
     release_date = datetime.strptime(
         date_string,
@@ -195,19 +181,43 @@ def discord_date(
         tzinfo=timezone.utc
     )
 
-    unix_time = int(
-        release_date.timestamp()
+    now = datetime.now(timezone.utc)
+
+    remaining = release_date - now
+
+    total_seconds = int(
+        remaining.total_seconds()
     )
 
-    full_date = (
-        f"<t:{unix_time}:D>"
+    if total_seconds <= 0:
+        return "Released"
+
+    days, remainder = divmod(
+        total_seconds,
+        86400
     )
 
-    countdown = (
-        f"<t:{unix_time}:R>"
+    hours, remainder = divmod(
+        remainder,
+        3600
     )
 
-    return full_date, countdown
+    minutes, _ = divmod(
+        remainder,
+        60
+    )
+
+    parts = []
+
+    if days:
+        parts.append(f"{days}d")
+
+    if hours or days:
+        parts.append(f"{hours}h")
+
+    parts.append(f"{minutes}m")
+
+    return " ".join(parts)
 
 
 def score_meter(
@@ -216,12 +226,10 @@ def score_meter(
 ) -> str:
 
     if vote_count <= 0:
-
         return (
             "⭐️ **Not Rated Yet**\n"
             "`▱▱▱▱▱▱▱▱▱▱`"
         )
-
 
     rating = max(
         0,
@@ -261,7 +269,6 @@ async def get_upcoming(
         today + timedelta(days=days)
     )
 
-
     if media_type == "movie":
 
         endpoint = "discover/movie"
@@ -270,7 +277,7 @@ async def get_upcoming(
         params = {
             "region": "US",
 
-            # U.S. theatrical releases:
+            # U.S. theatrical releases
             # 3 = Theatrical
             # 2 = Limited Theatrical
             "with_release_type": "3|2",
@@ -310,14 +317,12 @@ async def get_upcoming(
                 "false",
         }
 
-
     data = await fetch_tmdb(
         endpoint,
         params
     )
 
     results = []
-
 
     for item in data.get(
         "results",
@@ -331,9 +336,7 @@ async def get_upcoming(
         if not date_string:
             continue
 
-
         try:
-
             item_date = datetime.strptime(
                 date_string,
                 "%Y-%m-%d"
@@ -342,7 +345,6 @@ async def get_upcoming(
         except ValueError:
             continue
 
-
         if (
             today
             <= item_date
@@ -350,10 +352,9 @@ async def get_upcoming(
         ):
             results.append(item)
 
-
     # Release date first.
-    # Popular releases appear first when
-    # multiple titles share the same date.
+    # More popular titles first
+    # when dates are the same.
     results.sort(
         key=lambda item: (
             item.get(date_field, ""),
@@ -363,7 +364,6 @@ async def get_upcoming(
             )
         )
     )
-
 
     return results
 
@@ -379,7 +379,6 @@ async def build_release_embed(
         media_type,
         tmdb_id
     )
-
 
     if media_type == "movie":
 
@@ -409,24 +408,20 @@ async def build_release_embed(
 
         media_label = "TV"
 
-
     page_url = (
         f"{TMDB_WEB_URL}/"
         f"{media_type}/"
         f"{tmdb_id}"
     )
 
-
     genre_text = format_genres(
         details
     )
-
 
     runtime_text = format_runtime(
         details,
         media_type
     )
-
 
     overview = (
         details.get("overview")
@@ -435,14 +430,11 @@ async def build_release_embed(
         "No synopsis is currently available."
     ).strip()
 
-
-    if len(overview) > 600:
-
+    if len(overview) > 650:
         overview = (
-            overview[:597].rstrip()
+            overview[:647].rstrip()
             + "..."
         )
-
 
     rating = float(
         details.get("vote_average")
@@ -450,28 +442,20 @@ async def build_release_embed(
         or 0
     )
 
-
     vote_count = int(
         details.get("vote_count")
         or item.get("vote_count")
         or 0
     )
 
-
-    release_date, countdown = (
-        discord_date(date_string)
-    )
-
-
     description = (
         f"*{genre_text}*\n"
         f"🕒 **{runtime_text}**\n\n"
         f"{overview}\n\n"
-        f"📅 **{release_date}**\n"
-        f"⏳ **{countdown}**\n"
+        f"📅 **{format_release_date(date_string)}**\n"
+        f"⏳ **{format_countdown(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
-
 
     embed = discord.Embed(
         title=title,
@@ -484,7 +468,6 @@ async def build_release_embed(
         )
     )
 
-
     embed.set_author(
         name=(
             f"PREMIEREBOT  •  "
@@ -492,17 +475,12 @@ async def build_release_embed(
         )
     )
 
-
     poster_path = (
         details.get("poster_path")
         or item.get("poster_path")
     )
 
-
     if poster_path:
-
-        # Large poster rather than
-        # Discord's small thumbnail.
         embed.set_image(
             url=(
                 f"{TMDB_IMAGE_URL}"
@@ -510,11 +488,9 @@ async def build_release_embed(
             )
         )
 
-
     embed.set_footer(
         text="Data provided by TMDb"
     )
-
 
     return embed
 
@@ -539,14 +515,7 @@ class ReleaseBrowser(
         self.requester_id = requester_id
 
         self.page = 0
-
-        self.total_pages = max(
-            1,
-            math.ceil(
-                len(results)
-                / ITEMS_PER_PAGE
-            )
-        )
+        self.total_pages = len(results)
 
         self.update_buttons()
 
@@ -589,36 +558,18 @@ class ReleaseBrowser(
         return True
 
 
-    async def get_page_embeds(
+    async def get_current_embed(
         self
-    ) -> list[discord.Embed]:
+    ) -> discord.Embed:
 
-        start = (
+        item = self.results[
             self.page
-            * ITEMS_PER_PAGE
+        ]
+
+        return await build_release_embed(
+            item,
+            self.media_type
         )
-
-        end = (
-            start
-            + ITEMS_PER_PAGE
-        )
-
-        page_items = (
-            self.results[start:end]
-        )
-
-        embeds = []
-
-        for item in page_items:
-
-            embed = await build_release_embed(
-                item,
-                self.media_type
-            )
-
-            embeds.append(embed)
-
-        return embeds
 
 
     @discord.ui.button(
@@ -637,10 +588,10 @@ class ReleaseBrowser(
 
         self.update_buttons()
 
-        embeds = await self.get_page_embeds()
+        embed = await self.get_current_embed()
 
         await interaction.response.edit_message(
-            embeds=embeds,
+            embed=embed,
             view=self
         )
 
@@ -677,10 +628,10 @@ class ReleaseBrowser(
 
         self.update_buttons()
 
-        embeds = await self.get_page_embeds()
+        embed = await self.get_current_embed()
 
         await interaction.response.edit_message(
-            embeds=embeds,
+            embed=embed,
             view=self
         )
 
@@ -731,7 +682,6 @@ async def upcoming(
 
     await interaction.response.defer()
 
-
     try:
 
         results = await get_upcoming(
@@ -752,7 +702,6 @@ async def upcoming(
 
         return
 
-
     if not results:
 
         await interaction.followup.send(
@@ -762,17 +711,15 @@ async def upcoming(
 
         return
 
-
     view = ReleaseBrowser(
         results=results,
         media_type=media_type.value,
         requester_id=interaction.user.id
     )
 
-
     try:
 
-        embeds = await view.get_page_embeds()
+        embed = await view.get_current_embed()
 
     except Exception as error:
 
@@ -787,9 +734,8 @@ async def upcoming(
 
         return
 
-
     await interaction.followup.send(
-        embeds=embeds,
+        embed=embed,
         view=view
     )
 
