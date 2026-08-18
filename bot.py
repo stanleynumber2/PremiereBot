@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 5.0")
+print("PremiereBot code version: 5.1")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -138,7 +138,10 @@ def format_runtime(
     runtime = None
 
     if media_type == "movie":
-        runtime = details.get("runtime")
+
+        runtime = details.get(
+            "runtime"
+        )
 
     else:
 
@@ -655,9 +658,11 @@ async def get_us_movie_release_date(
         []
     ):
 
-        if country.get(
-            "iso_3166_1"
-        ) != "US":
+        if (
+            country.get(
+                "iso_3166_1"
+            ) != "US"
+        ):
             continue
 
         for release in country.get(
@@ -669,8 +674,6 @@ async def get_us_movie_release_date(
                 "type"
             )
 
-            # 3 = Theatrical
-            # 2 = Limited theatrical
             if release_type not in (
                 3,
                 2
@@ -686,10 +689,12 @@ async def get_us_movie_release_date(
 
             try:
 
-                parsed = datetime.fromisoformat(
-                    raw_date.replace(
-                        "Z",
-                        "+00:00"
+                parsed = (
+                    datetime.fromisoformat(
+                        raw_date.replace(
+                            "Z",
+                            "+00:00"
+                        )
                     )
                 )
 
@@ -719,8 +724,6 @@ async def get_us_movie_release_date(
     ]
 
 
-    # For an upcoming movie, prefer
-    # the next future U.S. theatrical date.
     if future_dates:
 
         future_dates.sort(
@@ -737,9 +740,6 @@ async def get_us_movie_release_date(
         )
 
 
-    # If the movie already released,
-    # use its earliest full/limited
-    # U.S. theatrical date.
     theatrical_dates.sort(
         key=lambda entry: (
             entry[1].date(),
@@ -1455,7 +1455,9 @@ async def search_titles(
         add_unique(item)
 
 
-    return final_results[:15]
+    # Search browser is intentionally
+    # capped at 10 results.
+    return final_results[:10]
 
 
 async def build_search_embed(
@@ -1655,8 +1657,102 @@ async def build_search_embed(
     return embed
 
 
+async def get_future_countdown_item(
+    results: list[dict]
+) -> tuple[dict, str] | None:
+
+    today = datetime.now(
+        timezone.utc
+    ).date()
+
+
+    # Results are already relevance-ranked.
+    # Walk through them until we find
+    # the strongest result that has not
+    # released/premiered yet.
+    for item in results:
+
+        media_type = item.get(
+            "_media_type"
+        )
+
+        tmdb_id = item.get(
+            "id"
+        )
+
+        if not tmdb_id:
+            continue
+
+
+        try:
+
+            if media_type == "movie":
+
+                date_string = (
+                    await get_us_movie_release_date(
+                        tmdb_id
+                    )
+                )
+
+                if not date_string:
+                    continue
+
+
+            else:
+
+                details = await get_details(
+                    "tv",
+                    tmdb_id
+                )
+
+                date_string = (
+                    details.get(
+                        "first_air_date"
+                    )
+                    or item.get(
+                        "first_air_date"
+                    )
+                )
+
+                if not date_string:
+                    continue
+
+
+            release_date = (
+                datetime.strptime(
+                    date_string,
+                    "%Y-%m-%d"
+                ).date()
+            )
+
+
+            # Countdown only accepts
+            # unreleased titles.
+            if release_date < today:
+                continue
+
+
+            return (
+                item,
+                date_string
+            )
+
+
+        except Exception as error:
+
+            print(
+                f"Countdown filter error: {error}"
+            )
+
+            continue
+
+
+    return None
+
+
 async def build_countdown_embed(
-    item: dict
+    item: dict,
+    date_string: str
 ) -> discord.Embed:
 
     media_type = item.get(
@@ -1679,18 +1775,6 @@ async def build_countdown_embed(
             or "Untitled"
         )
 
-        date_string = (
-            await get_us_movie_release_date(
-                tmdb_id
-            )
-        )
-
-        if not date_string:
-            date_string = (
-                details.get("release_date")
-                or item.get("release_date")
-            )
-
         media_label = "MOVIE"
 
 
@@ -1700,11 +1784,6 @@ async def build_countdown_embed(
             details.get("name")
             or item.get("name")
             or "Untitled"
-        )
-
-        date_string = (
-            details.get("first_air_date")
-            or item.get("first_air_date")
         )
 
         media_label = "TV"
@@ -1717,18 +1796,10 @@ async def build_countdown_embed(
     )
 
 
-    if date_string:
-
-        description = (
-            f"📅 **{format_release_date(date_string)}**\n"
-            f"⏳ **{format_exact_countdown(date_string)}**"
-        )
-
-    else:
-
-        description = (
-            "📅 **Release date unavailable**"
-        )
+    description = (
+        f"📅 **{format_release_date(date_string)}**\n"
+        f"⏳ **{format_exact_countdown(date_string)}**"
+    )
 
 
     embed = discord.Embed(
@@ -2267,10 +2338,10 @@ async def search(
 
 @client.tree.command(
     name="countdown",
-    description="See how long until a movie or TV show releases."
+    description="Countdown to an upcoming movie or TV premiere."
 )
 @app_commands.describe(
-    title="Movie or TV title.",
+    title="Upcoming movie or TV title.",
     media_type="Optionally limit the search to movies or TV."
 )
 @app_commands.rename(
@@ -2328,21 +2399,53 @@ async def countdown(
     if not results:
 
         await interaction.followup.send(
-            f"No relevant result found "
-            f"for **{title}**."
+            f"No relevant upcoming title "
+            f"was found for **{title}**."
         )
 
         return
 
 
-    # Use the strongest search result.
-    result = results[0]
+    try:
+
+        future_match = (
+            await get_future_countdown_item(
+                results
+            )
+        )
+
+    except Exception as error:
+
+        print(
+            f"Countdown filter error: {error}"
+        )
+
+        await interaction.followup.send(
+            "PremiereBot couldn't determine "
+            "the upcoming release date."
+        )
+
+        return
+
+
+    if not future_match:
+
+        await interaction.followup.send(
+            f"No unreleased movie or TV show "
+            f"matching **{title}** was found."
+        )
+
+        return
+
+
+    result, date_string = future_match
 
 
     try:
 
         embed = await build_countdown_embed(
-            result
+            result,
+            date_string
         )
 
     except Exception as error:
@@ -2352,8 +2455,8 @@ async def countdown(
         )
 
         await interaction.followup.send(
-            "PremiereBot found that title, "
-            "but couldn't load its release date."
+            "PremiereBot found an upcoming title, "
+            "but couldn't load its countdown."
         )
 
         return
