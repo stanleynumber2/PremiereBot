@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("ReleaseBot code version: 6.2")
+print("ReleaseBot code version: 6.3")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -68,10 +68,6 @@ class ReleaseClient(discord.Client):
 
 
 client = ReleaseClient()
-
-# Keep API verification bursts modest so /upcoming does not
-# fan out dozens of requests at once.
-UPCOMING_API_SEMAPHORE = asyncio.Semaphore(6)
 
 
 # =========================================================
@@ -680,10 +676,9 @@ async def verify_us_movie_release(
     if not tmdb_id:
         return None
 
-    async with UPCOMING_API_SEMAPHORE:
-        data = await fetch_tmdb(
-            f"movie/{tmdb_id}/release_dates"
-        )
+    data = await fetch_tmdb(
+        f"movie/{tmdb_id}/release_dates"
+    )
 
     us_entries = next(
         (
@@ -749,11 +744,10 @@ async def verify_us_tv_relevance(
     if not tmdb_id:
         return None
 
-    async with UPCOMING_API_SEMAPHORE:
-        details = await get_tmdb_details(
-            "tv",
-            tmdb_id
-        )
+    details = await get_tmdb_details(
+        "tv",
+        tmdb_id
+    )
 
     origin_countries = (
         details.get("origin_country")
@@ -774,92 +768,109 @@ async def verify_us_tv_relevance(
 
 
 async def get_upcoming_tmdb(
-    media_type: str | None,
+    media_type: str,
     timeframe: str
 ) -> list[dict]:
 
-    if media_type is None:
-        movie_results, tv_results = await asyncio.gather(
-            get_upcoming_tmdb("movie", timeframe),
-            get_upcoming_tmdb("tv", timeframe)
-        )
+    today = datetime.now(
+        timezone.utc
+    ).date()
 
-        combined = movie_results + tv_results
+    days = (
+        7
+        if timeframe == "week"
+        else 30
+    )
 
-        def combined_date(item):
-            return (
-                item.get("release_date")
-                or item.get("first_air_date")
-                or "9999-12-31"
-            )
-
-        combined.sort(
-            key=lambda item: (
-                combined_date(item),
-                -float(item.get("popularity") or 0)
-            )
-        )
-
-        return combined
-
-    today = datetime.now(timezone.utc).date()
-    days = 7 if timeframe == "week" else 30
-    end_date = today + timedelta(days=days)
+    end_date = (
+        today
+        + timedelta(days=days)
+    )
 
     if media_type == "movie":
+
         endpoint = "discover/movie"
         date_field = "release_date"
 
         params = {
             "region": "US",
             "with_release_type": "3|2",
-            "release_date.gte": today.isoformat(),
-            "release_date.lte": end_date.isoformat(),
-            "sort_by": "release_date.asc",
-            "include_adult": "false",
+
+            "release_date.gte":
+                today.isoformat(),
+
+            "release_date.lte":
+                end_date.isoformat(),
+
+            "sort_by":
+                "release_date.asc",
+
+            "include_adult":
+                "false",
         }
 
     else:
+
         endpoint = "discover/tv"
         date_field = "first_air_date"
 
         params = {
-            "first_air_date.gte": today.isoformat(),
-            "first_air_date.lte": end_date.isoformat(),
-            "sort_by": "first_air_date.asc",
-            "include_null_first_air_dates": "false",
-            "include_adult": "false",
+            "first_air_date.gte":
+                today.isoformat(),
+
+            "first_air_date.lte":
+                end_date.isoformat(),
+
+            "sort_by":
+                "first_air_date.asc",
+
+            "include_null_first_air_dates":
+                "false",
+
+            "include_adult":
+                "false",
         }
 
-    data = await fetch_tmdb(endpoint, params)
+    data = await fetch_tmdb(
+        endpoint,
+        params
+    )
+
     candidates = []
 
-    for item in data.get("results", []):
-        date_string = item.get(date_field)
+    for item in data.get(
+        "results",
+        []
+    ):
+
+        date_string = item.get(
+            date_field
+        )
 
         if not date_string:
             continue
 
         try:
+
             item_date = datetime.strptime(
                 date_string,
                 "%Y-%m-%d"
             ).date()
+
         except ValueError:
             continue
 
-        if today <= item_date <= end_date:
+        if (
+            today
+            <= item_date
+            <= end_date
+        ):
             item["_media_type"] = media_type
             item["_source"] = "tmdb"
             candidates.append(item)
 
-    # TMDb discover can return a lot of candidates. The old
-    # single-type command was light; combining movies + series
-    # can double the follow-up requests. Twenty per type is more
-    # than enough for this browser and keeps responses snappy.
-    candidates = candidates[:20]
-
     if media_type == "movie":
+
         checks = [
             verify_us_movie_release(
                 item,
@@ -868,9 +879,13 @@ async def get_upcoming_tmdb(
             )
             for item in candidates
         ]
+
     else:
+
         checks = [
-            verify_us_tv_relevance(item)
+            verify_us_tv_relevance(
+                item
+            )
             for item in candidates
         ]
 
@@ -882,17 +897,35 @@ async def get_upcoming_tmdb(
     results = []
 
     for result in checked_results:
-        if isinstance(result, Exception):
-            print(f"Filtering error: {result}")
+
+        if isinstance(
+            result,
+            Exception
+        ):
+
+            print(
+                f"Filtering error: {result}"
+            )
+
             continue
 
         if result is not None:
+            result["_media_type"] = media_type
+            result["_source"] = "tmdb"
             results.append(result)
 
     results.sort(
         key=lambda item: (
-            item.get(date_field, ""),
-            -float(item.get("popularity") or 0)
+            item.get(
+                date_field,
+                ""
+            ),
+            -float(
+                item.get(
+                    "popularity"
+                )
+                or 0
+            )
         )
     )
 
