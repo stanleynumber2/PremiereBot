@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 5.2")
+print("PremiereBot code version: 5.3")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -1246,7 +1246,7 @@ async def build_upcoming_embed(
 
 
 async def search_titles(
-    name: str,
+    title: str,
     media_type: str | None
 ) -> list[dict]:
 
@@ -1257,7 +1257,7 @@ async def search_titles(
         data = await fetch_tmdb(
             "search/movie",
             {
-                "query": name,
+                "query": title,
                 "include_adult": "false",
             }
         )
@@ -1275,7 +1275,7 @@ async def search_titles(
         data = await fetch_tmdb(
             "search/tv",
             {
-                "query": name,
+                "query": title,
                 "include_adult": "false",
             }
         )
@@ -1295,7 +1295,7 @@ async def search_titles(
             fetch_tmdb(
                 "search/movie",
                 {
-                    "query": name,
+                    "query": title,
                     "include_adult": "false",
                 }
             ),
@@ -1303,7 +1303,7 @@ async def search_titles(
             fetch_tmdb(
                 "search/tv",
                 {
-                    "query": name,
+                    "query": title,
                     "include_adult": "false",
                 }
             )
@@ -1327,14 +1327,14 @@ async def search_titles(
 
 
     query_norm = normalize_title(
-        name
+        title
     )
 
     relevant = []
 
     for item in results:
 
-        title = (
+        item_title = (
             item.get("title")
             or item.get("name")
             or ""
@@ -1347,7 +1347,7 @@ async def search_titles(
         )
 
         title_norm = normalize_title(
-            title
+            item_title
         )
 
         original_norm = normalize_title(
@@ -1374,7 +1374,7 @@ async def search_titles(
         key=lambda item:
             search_relevance(
                 item,
-                name
+                title
             )
     )
 
@@ -1688,9 +1688,6 @@ async def get_future_countdown_item(
 
             if media_type == "movie":
 
-                # This is the critical fix:
-                # first check the movie's
-                # ORIGINAL TMDb release date.
                 original_date_string = (
                     details.get(
                         "release_date"
@@ -1712,11 +1709,6 @@ async def get_future_countdown_item(
                 )
 
 
-                # If the movie already
-                # originally released,
-                # reject it completely.
-                # Future re-releases do
-                # NOT count.
                 if (
                     original_release_date
                     < today
@@ -1724,9 +1716,6 @@ async def get_future_countdown_item(
                     continue
 
 
-                # Now that we know the movie
-                # itself is genuinely unreleased,
-                # prefer its U.S. theatrical date.
                 date_string = (
                     await get_us_movie_release_date(
                         tmdb_id
@@ -1763,8 +1752,6 @@ async def get_future_countdown_item(
                 )
 
 
-                # Existing TV shows do not
-                # qualify for /countdown.
                 if first_air_date < today:
                     continue
 
@@ -2295,8 +2282,8 @@ async def upcoming(
     description="Search for a movie or TV show."
 )
 @app_commands.describe(
-    name="Title to search for.",
-    media_type="Optionally limit the search to movies or TV."
+    media_type="Choose movies or TV.",
+    title="Title to search for."
 )
 @app_commands.rename(
     media_type="type"
@@ -2317,23 +2304,17 @@ async def upcoming(
 )
 async def search(
     interaction: discord.Interaction,
-    name: str,
-    media_type: app_commands.Choice[str] | None = None
+    media_type: app_commands.Choice[str],
+    title: str
 ):
 
     await interaction.response.defer()
 
-    selected_type = (
-        media_type.value
-        if media_type
-        else None
-    )
-
     try:
 
         results = await search_titles(
-            name,
-            selected_type
+            title,
+            media_type.value
         )
 
     except Exception as error:
@@ -2352,7 +2333,7 @@ async def search(
     if not results:
 
         await interaction.followup.send(
-            f"No relevant results found for **{name}**."
+            f"No relevant results found for **{title}**."
         )
 
         return
@@ -2390,8 +2371,8 @@ async def search(
     description="Countdown to an upcoming movie or TV premiere."
 )
 @app_commands.describe(
-    title="Upcoming movie or TV title.",
-    media_type="Optionally limit the search to movies or TV."
+    media_type="Choose movies or TV.",
+    title="Upcoming movie or TV title."
 )
 @app_commands.rename(
     media_type="type"
@@ -2412,23 +2393,17 @@ async def search(
 )
 async def countdown(
     interaction: discord.Interaction,
-    title: str,
-    media_type: app_commands.Choice[str] | None = None
+    media_type: app_commands.Choice[str],
+    title: str
 ):
 
     await interaction.response.defer()
-
-    selected_type = (
-        media_type.value
-        if media_type
-        else None
-    )
 
     try:
 
         results = await search_titles(
             title,
-            selected_type
+            media_type.value
         )
 
     except Exception as error:
