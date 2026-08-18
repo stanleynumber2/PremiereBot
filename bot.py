@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 3.3")
+print("PremiereBot code version: 4.0")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -249,8 +249,6 @@ def get_us_provider_names(
 
     names = []
 
-    # Include any way the title can
-    # legitimately be found in the U.S.
     categories = [
         "flatrate",
         "free",
@@ -287,8 +285,6 @@ def format_tv_availability(
 
     names = []
 
-    # First show the actual TV network
-    # or originating platform.
     for network in (
         details.get("networks")
         or []
@@ -302,8 +298,6 @@ def format_tv_availability(
         ):
             names.append(name)
 
-    # Then add U.S. streaming /
-    # purchase providers.
     for name in get_us_provider_names(
         details
     ):
@@ -314,15 +308,33 @@ def format_tv_availability(
     if not names:
         return None
 
-    # Prevent an enormous provider line.
     return " • ".join(
         names[:5]
+    )
+
+
+def format_search_availability(
+    details: dict
+) -> str | None:
+
+    names = get_us_provider_names(
+        details
+    )
+
+    if not names:
+        return None
+
+    return " • ".join(
+        names[:6]
     )
 
 
 def format_release_date(
     date_string: str
 ) -> str:
+
+    if not date_string:
+        return "Date unavailable"
 
     release_date = datetime.strptime(
         date_string,
@@ -476,8 +488,6 @@ async def verify_us_movie_release(
             "type"
         )
 
-        # 3 = Theatrical
-        # 2 = Limited theatrical
         if release_type not in (3, 2):
             continue
 
@@ -517,9 +527,6 @@ async def verify_us_movie_release(
     if not possible_dates:
         return None
 
-    # Prefer full theatrical (3)
-    # over limited theatrical (2),
-    # then use earliest matching date.
     possible_dates.sort(
         key=lambda entry: (
             0 if entry[0] == 3 else 1,
@@ -570,9 +577,6 @@ async def verify_us_tv_relevance(
         )
     )
 
-    # Keep a U.S.-originating show,
-    # OR an international show that
-    # actually has U.S. availability.
     if (
         not is_us_origin
         and not us_providers
@@ -581,9 +585,6 @@ async def verify_us_tv_relevance(
 
     verified = dict(item)
 
-    # Cache details so we don't need
-    # to fetch them again when the
-    # user pages to this title.
     verified["_details"] = details
 
     return verified
@@ -616,9 +617,7 @@ async def get_upcoming(
 
         params = {
             "region": "US",
-
-            "with_release_type":
-                "3|2",
+            "with_release_type": "3|2",
 
             "release_date.gte":
                 today.isoformat(),
@@ -756,15 +755,13 @@ async def get_upcoming(
     return results
 
 
-async def build_release_embed(
+async def build_upcoming_embed(
     item: dict,
     media_type: str
 ) -> discord.Embed:
 
     tmdb_id = item.get("id")
 
-    # TV filtering may already have
-    # loaded the details for us.
     details = item.get(
         "_details"
     )
@@ -821,11 +818,6 @@ async def build_release_embed(
         details
     )
 
-    runtime_text = format_runtime(
-        details,
-        media_type
-    )
-
 
     overview = (
         details.get("overview")
@@ -857,14 +849,27 @@ async def build_release_embed(
     )
 
 
-    metadata_lines = [
-        f"🏷️ *{genre_text}*",
-        f"🎭 **{cast_text}**",
-        f"🕒 **{runtime_text}**",
-    ]
+    if media_type == "movie":
 
+        runtime_text = (
+            format_runtime(
+                details,
+                "movie"
+            )
+        )
 
-    if media_type == "tv":
+        metadata_lines = [
+            f"🏷️ *{genre_text}*",
+            f"🎭 **{cast_text}**",
+            f"🕒 **{runtime_text}**",
+        ]
+
+    else:
+
+        metadata_lines = [
+            f"🏷️ *{genre_text}*",
+            f"🎭 **{cast_text}**",
+        ]
 
         availability = (
             format_tv_availability(
@@ -935,6 +940,288 @@ async def build_release_embed(
             details
         )
     ):
+
+        embed.set_footer(
+            text=(
+                "Data provided by TMDb "
+                "• Availability powered by JustWatch"
+            )
+        )
+
+    else:
+
+        embed.set_footer(
+            text="Data provided by TMDb"
+        )
+
+
+    return embed
+
+
+async def search_titles(
+    name: str,
+    media_type: str | None
+) -> list[dict]:
+
+    results = []
+
+    if media_type == "movie":
+
+        data = await fetch_tmdb(
+            "search/movie",
+            {
+                "query": name,
+                "include_adult": "false",
+            }
+        )
+
+        for item in data.get(
+            "results",
+            []
+        ):
+
+            item["_media_type"] = "movie"
+            results.append(item)
+
+
+    elif media_type == "tv":
+
+        data = await fetch_tmdb(
+            "search/tv",
+            {
+                "query": name,
+                "include_adult": "false",
+            }
+        )
+
+        for item in data.get(
+            "results",
+            []
+        ):
+
+            item["_media_type"] = "tv"
+            results.append(item)
+
+
+    else:
+
+        movie_data, tv_data = await asyncio.gather(
+
+            fetch_tmdb(
+                "search/movie",
+                {
+                    "query": name,
+                    "include_adult": "false",
+                }
+            ),
+
+            fetch_tmdb(
+                "search/tv",
+                {
+                    "query": name,
+                    "include_adult": "false",
+                }
+            )
+        )
+
+        for item in movie_data.get(
+            "results",
+            []
+        ):
+
+            item["_media_type"] = "movie"
+            results.append(item)
+
+
+        for item in tv_data.get(
+            "results",
+            []
+        ):
+
+            item["_media_type"] = "tv"
+            results.append(item)
+
+
+    results.sort(
+        key=lambda item: (
+            -float(
+                item.get("popularity")
+                or 0
+            )
+        )
+    )
+
+    return results[:20]
+
+
+async def build_search_embed(
+    item: dict
+) -> discord.Embed:
+
+    media_type = item.get(
+        "_media_type"
+    )
+
+    tmdb_id = item.get("id")
+
+    details = await get_details(
+        media_type,
+        tmdb_id
+    )
+
+
+    if media_type == "movie":
+
+        title = (
+            details.get("title")
+            or item.get("title")
+            or "Untitled"
+        )
+
+        date_string = (
+            details.get("release_date")
+            or item.get("release_date")
+        )
+
+        media_label = "MOVIE"
+
+    else:
+
+        title = (
+            details.get("name")
+            or item.get("name")
+            or "Untitled"
+        )
+
+        date_string = (
+            details.get("first_air_date")
+            or item.get("first_air_date")
+        )
+
+        media_label = "TV"
+
+
+    page_url = (
+        f"{TMDB_WEB_URL}/"
+        f"{media_type}/"
+        f"{tmdb_id}"
+    )
+
+
+    genre_text = format_genres(
+        details
+    )
+
+    cast_text = format_cast(
+        details
+    )
+
+    runtime_text = format_runtime(
+        details,
+        media_type
+    )
+
+    availability = (
+        format_search_availability(
+            details
+        )
+    )
+
+
+    overview = (
+        details.get("overview")
+        or item.get("overview")
+        or
+        "No synopsis is currently available."
+    ).strip()
+
+
+    if len(overview) > 650:
+
+        overview = (
+            overview[:647].rstrip()
+            + "..."
+        )
+
+
+    rating = float(
+        details.get("vote_average")
+        or item.get("vote_average")
+        or 0
+    )
+
+
+    vote_count = int(
+        details.get("vote_count")
+        or item.get("vote_count")
+        or 0
+    )
+
+
+    metadata_lines = [
+        f"🏷️ *{genre_text}*",
+        f"🎭 **{cast_text}**",
+        f"🕒 **{runtime_text}**",
+    ]
+
+
+    if availability:
+
+        metadata_lines.append(
+            f"📺 **{availability}**"
+        )
+
+
+    metadata = "\n".join(
+        metadata_lines
+    )
+
+
+    description = (
+        f"{metadata}\n\n"
+        f"{overview}\n\n"
+        f"📅 **{format_release_date(date_string)}**\n"
+        f"{score_meter(rating, vote_count)}"
+    )
+
+
+    embed = discord.Embed(
+        title=title,
+        url=page_url,
+        description=description,
+        color=discord.Color.from_rgb(
+            40,
+            105,
+            150
+        )
+    )
+
+
+    embed.set_author(
+        name=(
+            f"PREMIEREBOT  •  "
+            f"{media_label}"
+        )
+    )
+
+
+    poster_path = (
+        details.get("poster_path")
+        or item.get("poster_path")
+    )
+
+
+    if poster_path:
+
+        embed.set_image(
+            url=(
+                f"{TMDB_IMAGE_URL}"
+                f"{poster_path}"
+            )
+        )
+
+
+    if availability:
 
         embed.set_footer(
             text=(
@@ -1028,9 +1315,151 @@ class ReleaseBrowser(
             self.page
         ]
 
-        return await build_release_embed(
+        return await build_upcoming_embed(
             item,
             self.media_type
+        )
+
+
+    @discord.ui.button(
+        label="Previous",
+        emoji="◀️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def previous_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if self.page > 0:
+            self.page -= 1
+
+        self.update_buttons()
+
+        embed = await self.get_current_embed()
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self
+        )
+
+
+    @discord.ui.button(
+        label="1 / 1",
+        style=discord.ButtonStyle.secondary,
+        disabled=True
+    )
+    async def page_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        pass
+
+
+    @discord.ui.button(
+        label="Next",
+        emoji="▶️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def next_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if (
+            self.page
+            < self.total_pages - 1
+        ):
+            self.page += 1
+
+        self.update_buttons()
+
+        embed = await self.get_current_embed()
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self
+        )
+
+
+class SearchBrowser(
+    discord.ui.View
+):
+
+    def __init__(
+        self,
+        results: list[dict],
+        requester_id: int
+    ):
+
+        super().__init__(
+            timeout=300
+        )
+
+        self.results = results
+        self.requester_id = requester_id
+
+        self.page = 0
+        self.total_pages = len(
+            results
+        )
+
+        self.update_buttons()
+
+
+    def update_buttons(
+        self
+    ):
+
+        self.previous_button.disabled = (
+            self.page <= 0
+        )
+
+        self.next_button.disabled = (
+            self.page
+            >= self.total_pages - 1
+        )
+
+        self.page_button.label = (
+            f"{self.page + 1} "
+            f"/ {self.total_pages}"
+        )
+
+
+    async def interaction_check(
+        self,
+        interaction: discord.Interaction
+    ) -> bool:
+
+        if (
+            interaction.user.id
+            != self.requester_id
+        ):
+
+            await interaction.response.send_message(
+                "Run `/search` to open "
+                "your own PremiereBot search.",
+                ephemeral=True
+            )
+
+            return False
+
+        return True
+
+
+    async def get_current_embed(
+        self
+    ) -> discord.Embed:
+
+        item = self.results[
+            self.page
+        ]
+
+        return await build_search_embed(
+            item
         )
 
 
@@ -1196,6 +1625,106 @@ async def upcoming(
         await interaction.followup.send(
             "PremiereBot found releases, "
             "but couldn't load their details."
+        )
+
+        return
+
+
+    await interaction.followup.send(
+        embed=embed,
+        view=view
+    )
+
+
+@client.tree.command(
+    name="search",
+    description="Search for a movie or TV show."
+)
+@app_commands.describe(
+    name="Title to search for.",
+    media_type="Optionally limit the search to movies or TV."
+)
+@app_commands.rename(
+    media_type="type"
+)
+@app_commands.choices(
+    media_type=[
+        app_commands.Choice(
+            name="Movie",
+            value="movie"
+        ),
+
+        app_commands.Choice(
+            name="TV",
+            value="tv"
+        ),
+    ]
+)
+async def search(
+    interaction: discord.Interaction,
+    name: str,
+    media_type: app_commands.Choice[str] | None = None
+):
+
+    await interaction.response.defer()
+
+
+    selected_type = (
+        media_type.value
+        if media_type
+        else None
+    )
+
+
+    try:
+
+        results = await search_titles(
+            name,
+            selected_type
+        )
+
+    except Exception as error:
+
+        print(
+            f"Search error: {error}"
+        )
+
+        await interaction.followup.send(
+            "PremiereBot couldn't complete "
+            "that search right now."
+        )
+
+        return
+
+
+    if not results:
+
+        await interaction.followup.send(
+            f"No results found for **{name}**."
+        )
+
+        return
+
+
+    view = SearchBrowser(
+        results=results,
+        requester_id=interaction.user.id
+    )
+
+
+    try:
+
+        embed = await view.get_current_embed()
+
+    except Exception as error:
+
+        print(
+            f"Search detail error: {error}"
+        )
+
+        await interaction.followup.send(
+            "PremiereBot found a result, "
+            "but couldn't load its details."
         )
 
         return
