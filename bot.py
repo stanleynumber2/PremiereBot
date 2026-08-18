@@ -1,4 +1,5 @@
 import os
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import aiohttp
@@ -6,7 +7,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 3.2")
+print("PremiereBot code version: 3.3")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -118,12 +119,11 @@ async def get_details(
     tmdb_id: int
 ) -> dict:
 
-    # Pull the normal details AND credits
-    # in one TMDb request.
     return await fetch_tmdb(
         f"{media_type}/{tmdb_id}",
         {
-            "append_to_response": "credits"
+            "append_to_response":
+                "credits,watch/providers"
         }
     )
 
@@ -219,6 +219,107 @@ def format_cast(
     return " • ".join(names)
 
 
+def get_us_watch_data(
+    details: dict
+) -> dict:
+
+    watch_data = (
+        details.get("watch/providers")
+        or {}
+    )
+
+    results = (
+        watch_data.get("results")
+        or {}
+    )
+
+    return (
+        results.get("US")
+        or {}
+    )
+
+
+def get_us_provider_names(
+    details: dict
+) -> list[str]:
+
+    us_data = get_us_watch_data(
+        details
+    )
+
+    names = []
+
+    # Include any way the title can
+    # legitimately be found in the U.S.
+    categories = [
+        "flatrate",
+        "free",
+        "ads",
+        "rent",
+        "buy",
+    ]
+
+    for category in categories:
+
+        providers = (
+            us_data.get(category)
+            or []
+        )
+
+        for provider in providers:
+
+            name = provider.get(
+                "provider_name"
+            )
+
+            if (
+                name
+                and name not in names
+            ):
+                names.append(name)
+
+    return names
+
+
+def format_tv_availability(
+    details: dict
+) -> str | None:
+
+    names = []
+
+    # First show the actual TV network
+    # or originating platform.
+    for network in (
+        details.get("networks")
+        or []
+    ):
+
+        name = network.get("name")
+
+        if (
+            name
+            and name not in names
+        ):
+            names.append(name)
+
+    # Then add U.S. streaming /
+    # purchase providers.
+    for name in get_us_provider_names(
+        details
+    ):
+
+        if name not in names:
+            names.append(name)
+
+    if not names:
+        return None
+
+    # Prevent an enormous provider line.
+    return " • ".join(
+        names[:5]
+    )
+
+
 def format_release_date(
     date_string: str
 ) -> str:
@@ -235,9 +336,7 @@ def format_release_date(
         release_date.timestamp()
     )
 
-    return (
-        f"<t:{unix_time}:D>"
-    )
+    return f"<t:{unix_time}:D>"
 
 
 def format_countdown(
@@ -332,6 +431,164 @@ def score_meter(
     )
 
 
+async def verify_us_movie_release(
+    item: dict,
+    start_date,
+    end_date
+) -> dict | None:
+
+    tmdb_id = item.get("id")
+
+    if not tmdb_id:
+        return None
+
+    data = await fetch_tmdb(
+        f"movie/{tmdb_id}/release_dates"
+    )
+
+    us_entries = None
+
+    for country in data.get(
+        "results",
+        []
+    ):
+
+        if (
+            country.get(
+                "iso_3166_1"
+            )
+            == "US"
+        ):
+            us_entries = country
+            break
+
+    if not us_entries:
+        return None
+
+    possible_dates = []
+
+    for release in us_entries.get(
+        "release_dates",
+        []
+    ):
+
+        release_type = release.get(
+            "type"
+        )
+
+        # 3 = Theatrical
+        # 2 = Limited theatrical
+        if release_type not in (3, 2):
+            continue
+
+        raw_date = release.get(
+            "release_date"
+        )
+
+        if not raw_date:
+            continue
+
+        try:
+
+            release_date = (
+                datetime.fromisoformat(
+                    raw_date.replace(
+                        "Z",
+                        "+00:00"
+                    )
+                ).date()
+            )
+
+        except ValueError:
+            continue
+
+        if (
+            start_date
+            <= release_date
+            <= end_date
+        ):
+            possible_dates.append(
+                (
+                    release_type,
+                    release_date
+                )
+            )
+
+    if not possible_dates:
+        return None
+
+    # Prefer full theatrical (3)
+    # over limited theatrical (2),
+    # then use earliest matching date.
+    possible_dates.sort(
+        key=lambda entry: (
+            0 if entry[0] == 3 else 1,
+            entry[1]
+        )
+    )
+
+    chosen_date = (
+        possible_dates[0][1]
+    )
+
+    verified = dict(item)
+
+    verified["release_date"] = (
+        chosen_date.isoformat()
+    )
+
+    return verified
+
+
+async def verify_us_tv_relevance(
+    item: dict
+) -> dict | None:
+
+    tmdb_id = item.get("id")
+
+    if not tmdb_id:
+        return None
+
+    details = await get_details(
+        "tv",
+        tmdb_id
+    )
+
+    origin_countries = (
+        details.get("origin_country")
+        or item.get("origin_country")
+        or []
+    )
+
+    is_us_origin = (
+        "US" in origin_countries
+    )
+
+    us_providers = (
+        get_us_provider_names(
+            details
+        )
+    )
+
+    # Keep a U.S.-originating show,
+    # OR an international show that
+    # actually has U.S. availability.
+    if (
+        not is_us_origin
+        and not us_providers
+    ):
+        return None
+
+    verified = dict(item)
+
+    # Cache details so we don't need
+    # to fetch them again when the
+    # user pages to this title.
+    verified["_details"] = details
+
+    return verified
+
+
 async def get_upcoming(
     media_type: str,
     timeframe: str
@@ -348,9 +605,8 @@ async def get_upcoming(
     )
 
     end_date = (
-        today + timedelta(
-            days=days
-        )
+        today
+        + timedelta(days=days)
     )
 
     if media_type == "movie":
@@ -361,10 +617,8 @@ async def get_upcoming(
         params = {
             "region": "US",
 
-            # U.S. theatrical releases
-            # 3 = Theatrical
-            # 2 = Limited theatrical
-            "with_release_type": "3|2",
+            "with_release_type":
+                "3|2",
 
             "release_date.gte":
                 today.isoformat(),
@@ -406,7 +660,7 @@ async def get_upcoming(
         params
     )
 
-    results = []
+    candidates = []
 
     for item in data.get(
         "results",
@@ -435,10 +689,55 @@ async def get_upcoming(
             <= item_date
             <= end_date
         ):
-            results.append(item)
+            candidates.append(item)
 
-    # Date first.
-    # Popularity breaks ties.
+
+    if media_type == "movie":
+
+        checks = [
+            verify_us_movie_release(
+                item,
+                today,
+                end_date
+            )
+            for item in candidates
+        ]
+
+    else:
+
+        checks = [
+            verify_us_tv_relevance(
+                item
+            )
+            for item in candidates
+        ]
+
+
+    checked_results = await asyncio.gather(
+        *checks,
+        return_exceptions=True
+    )
+
+
+    results = []
+
+    for result in checked_results:
+
+        if isinstance(
+            result,
+            Exception
+        ):
+
+            print(
+                f"Filtering error: {result}"
+            )
+
+            continue
+
+        if result is not None:
+            results.append(result)
+
+
     results.sort(
         key=lambda item: (
             item.get(
@@ -464,10 +763,19 @@ async def build_release_embed(
 
     tmdb_id = item.get("id")
 
-    details = await get_details(
-        media_type,
-        tmdb_id
+    # TV filtering may already have
+    # loaded the details for us.
+    details = item.get(
+        "_details"
     )
+
+    if not details:
+
+        details = await get_details(
+            media_type,
+            tmdb_id
+        )
+
 
     if media_type == "movie":
 
@@ -477,10 +785,8 @@ async def build_release_embed(
             or "Untitled"
         )
 
-        date_string = (
-            item.get(
-                "release_date"
-            )
+        date_string = item.get(
+            "release_date"
         )
 
         media_label = "MOVIE"
@@ -493,19 +799,19 @@ async def build_release_embed(
             or "Untitled"
         )
 
-        date_string = (
-            item.get(
-                "first_air_date"
-            )
+        date_string = item.get(
+            "first_air_date"
         )
 
         media_label = "TV"
+
 
     page_url = (
         f"{TMDB_WEB_URL}/"
         f"{media_type}/"
         f"{tmdb_id}"
     )
+
 
     genre_text = format_genres(
         details
@@ -520,12 +826,14 @@ async def build_release_embed(
         media_type
     )
 
+
     overview = (
         details.get("overview")
         or item.get("overview")
         or
         "No synopsis is currently available."
     ).strip()
+
 
     if len(overview) > 650:
 
@@ -534,11 +842,13 @@ async def build_release_embed(
             + "..."
         )
 
+
     rating = float(
         details.get("vote_average")
         or item.get("vote_average")
         or 0
     )
+
 
     vote_count = int(
         details.get("vote_count")
@@ -546,15 +856,42 @@ async def build_release_embed(
         or 0
     )
 
+
+    metadata_lines = [
+        f"🏷️ *{genre_text}*",
+        f"🎭 **{cast_text}**",
+        f"🕒 **{runtime_text}**",
+    ]
+
+
+    if media_type == "tv":
+
+        availability = (
+            format_tv_availability(
+                details
+            )
+        )
+
+        if availability:
+
+            metadata_lines.append(
+                f"📺 **{availability}**"
+            )
+
+
+    metadata = "\n".join(
+        metadata_lines
+    )
+
+
     description = (
-        f"🏷️ *{genre_text}*\n"
-        f"🎭 **{cast_text}**\n"
-        f"🕒 **{runtime_text}**\n\n"
+        f"{metadata}\n\n"
         f"{overview}\n\n"
         f"📅 **{format_release_date(date_string)}**\n"
         f"⏳ **{format_countdown(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
+
 
     embed = discord.Embed(
         title=title,
@@ -567,6 +904,7 @@ async def build_release_embed(
         )
     )
 
+
     embed.set_author(
         name=(
             f"PREMIEREBOT  •  "
@@ -574,10 +912,12 @@ async def build_release_embed(
         )
     )
 
+
     poster_path = (
         details.get("poster_path")
         or item.get("poster_path")
     )
+
 
     if poster_path:
 
@@ -588,9 +928,27 @@ async def build_release_embed(
             )
         )
 
-    embed.set_footer(
-        text="Data provided by TMDb"
-    )
+
+    if (
+        media_type == "tv"
+        and get_us_provider_names(
+            details
+        )
+    ):
+
+        embed.set_footer(
+            text=(
+                "Data provided by TMDb "
+                "• Availability powered by JustWatch"
+            )
+        )
+
+    else:
+
+        embed.set_footer(
+            text="Data provided by TMDb"
+        )
+
 
     return embed
 
@@ -786,6 +1144,7 @@ async def upcoming(
 
     await interaction.response.defer()
 
+
     try:
 
         results = await get_upcoming(
@@ -806,6 +1165,7 @@ async def upcoming(
 
         return
 
+
     if not results:
 
         await interaction.followup.send(
@@ -815,11 +1175,13 @@ async def upcoming(
 
         return
 
+
     view = ReleaseBrowser(
         results=results,
         media_type=media_type.value,
         requester_id=interaction.user.id
     )
+
 
     try:
 
@@ -837,6 +1199,7 @@ async def upcoming(
         )
 
         return
+
 
     await interaction.followup.send(
         embed=embed,
