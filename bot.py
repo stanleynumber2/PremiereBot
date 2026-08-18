@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 4.1")
+print("PremiereBot code version: 4.3")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -494,46 +494,31 @@ def search_relevance(
         original_title
     )
 
-    exact = (
-        title_norm == query_norm
-        or original_norm == query_norm
+    titles = [
+        title_norm,
+        original_norm
+    ]
+
+    exact = any(
+        candidate == query_norm
+        for candidate in titles
     )
 
-    starts_with = (
-        title_norm.startswith(
-            query_norm
+    extension = any(
+        candidate.startswith(
+            query_norm + " "
         )
-        or original_norm.startswith(
-            query_norm
-        )
+        for candidate in titles
     )
 
-    contains_phrase = (
-        query_norm in title_norm
-        or query_norm in original_norm
+    contains_phrase = any(
+        query_norm in candidate
+        for candidate in titles
     )
 
-    query_words = set(
-        query_norm.split()
-    )
-
-    title_words = set(
-        title_norm.split()
-    )
-
-    original_words = set(
-        original_norm.split()
-    )
-
-    word_overlap = max(
-        len(
-            query_words
-            & title_words
-        ),
-        len(
-            query_words
-            & original_words
-        )
+    vote_count = int(
+        item.get("vote_count")
+        or 0
     )
 
     popularity = float(
@@ -541,11 +526,21 @@ def search_relevance(
         or 0
     )
 
+    if exact:
+        match_rank = 0
+
+    elif extension:
+        match_rank = 1
+
+    elif contains_phrase:
+        match_rank = 2
+
+    else:
+        match_rank = 3
+
     return (
-        0 if exact else 1,
-        0 if starts_with else 1,
-        0 if contains_phrase else 1,
-        -word_overlap,
+        match_rank,
+        -vote_count,
         -popularity
     )
 
@@ -797,7 +792,6 @@ async def get_upcoming(
         ):
             candidates.append(item)
 
-
     if media_type == "movie":
 
         checks = [
@@ -818,12 +812,10 @@ async def get_upcoming(
             for item in candidates
         ]
 
-
     checked_results = await asyncio.gather(
         *checks,
         return_exceptions=True
     )
-
 
     results = []
 
@@ -842,7 +834,6 @@ async def get_upcoming(
 
         if result is not None:
             results.append(result)
-
 
     results.sort(
         key=lambda item: (
@@ -880,7 +871,6 @@ async def build_upcoming_embed(
             tmdb_id
         )
 
-
     if media_type == "movie":
 
         title = (
@@ -909,13 +899,11 @@ async def build_upcoming_embed(
 
         media_label = "TV"
 
-
     page_url = (
         f"{TMDB_WEB_URL}/"
         f"{media_type}/"
         f"{tmdb_id}"
     )
-
 
     genre_text = format_genres(
         details
@@ -925,14 +913,11 @@ async def build_upcoming_embed(
         details
     )
 
-
     overview = (
         details.get("overview")
         or item.get("overview")
-        or
-        "No synopsis is currently available."
+        or "No synopsis is currently available."
     ).strip()
-
 
     if len(overview) > 650:
 
@@ -941,13 +926,11 @@ async def build_upcoming_embed(
             + "..."
         )
 
-
     rating = float(
         details.get("vote_average")
         or item.get("vote_average")
         or 0
     )
-
 
     vote_count = int(
         details.get("vote_count")
@@ -955,14 +938,11 @@ async def build_upcoming_embed(
         or 0
     )
 
-
     if media_type == "movie":
 
-        runtime_text = (
-            format_runtime(
-                details,
-                "movie"
-            )
+        runtime_text = format_runtime(
+            details,
+            "movie"
         )
 
         metadata_lines = [
@@ -990,11 +970,9 @@ async def build_upcoming_embed(
                 f"📺 **{availability}**"
             )
 
-
     metadata = "\n".join(
         metadata_lines
     )
-
 
     description = (
         f"{metadata}\n\n"
@@ -1003,7 +981,6 @@ async def build_upcoming_embed(
         f"⏳ **{format_countdown(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
-
 
     embed = discord.Embed(
         title=title,
@@ -1016,7 +993,6 @@ async def build_upcoming_embed(
         )
     )
 
-
     embed.set_author(
         name=(
             f"PREMIEREBOT  •  "
@@ -1024,12 +1000,10 @@ async def build_upcoming_embed(
         )
     )
 
-
     poster_path = (
         details.get("poster_path")
         or item.get("poster_path")
     )
-
 
     if poster_path:
 
@@ -1039,7 +1013,6 @@ async def build_upcoming_embed(
                 f"{poster_path}"
             )
         )
-
 
     if (
         media_type == "tv"
@@ -1061,7 +1034,6 @@ async def build_upcoming_embed(
             text="Data provided by TMDb"
         )
 
-
     return embed
 
 
@@ -1071,7 +1043,6 @@ async def search_titles(
 ) -> list[dict]:
 
     results = []
-
 
     if media_type == "movie":
 
@@ -1087,9 +1058,9 @@ async def search_titles(
             "results",
             []
         ):
+
             item["_media_type"] = "movie"
             results.append(item)
-
 
     elif media_type == "tv":
 
@@ -1105,9 +1076,9 @@ async def search_titles(
             "results",
             []
         ):
+
             item["_media_type"] = "tv"
             results.append(item)
-
 
     else:
 
@@ -1134,6 +1105,7 @@ async def search_titles(
             "results",
             []
         ):
+
             item["_media_type"] = "movie"
             results.append(item)
 
@@ -1141,6 +1113,7 @@ async def search_titles(
             "results",
             []
         ):
+
             item["_media_type"] = "tv"
             results.append(item)
 
@@ -1149,9 +1122,7 @@ async def search_titles(
         name
     )
 
-    strong_matches = []
-
-    weak_matches = []
+    relevant = []
 
 
     for item in results:
@@ -1176,31 +1147,24 @@ async def search_titles(
             original_title
         )
 
+
         if (
-            query_norm in title_norm
+            title_norm == query_norm
+            or original_norm == query_norm
+            or title_norm.startswith(
+                query_norm + " "
+            )
+            or original_norm.startswith(
+                query_norm + " "
+            )
+            or query_norm in title_norm
             or query_norm in original_norm
-            or title_norm in query_norm
-            or original_norm in query_norm
         ):
-            strong_matches.append(
-                item
-            )
 
-        else:
-            weak_matches.append(
-                item
-            )
+            relevant.append(item)
 
 
-    strong_matches.sort(
-        key=lambda item:
-            search_relevance(
-                item,
-                name
-            )
-    )
-
-    weak_matches.sort(
+    relevant.sort(
         key=lambda item:
             search_relevance(
                 item,
@@ -1209,25 +1173,7 @@ async def search_titles(
     )
 
 
-    # Prefer genuinely related titles.
-    # Only use weaker results if we
-    # don't have enough good ones.
-    refined = strong_matches[:10]
-
-    if len(refined) < 5:
-
-        remaining_slots = (
-            10 - len(refined)
-        )
-
-        refined.extend(
-            weak_matches[
-                :remaining_slots
-            ]
-        )
-
-
-    return refined[:10]
+    return relevant[:10]
 
 
 async def build_search_embed(
@@ -1244,7 +1190,6 @@ async def build_search_embed(
         media_type,
         tmdb_id
     )
-
 
     if media_type == "movie":
 
@@ -1316,14 +1261,12 @@ async def build_search_embed(
         )
     )
 
-
     overview = (
         details.get("overview")
         or item.get("overview")
         or
         "No synopsis is currently available."
     ).strip()
-
 
     if len(overview) > 650:
 
@@ -1332,13 +1275,11 @@ async def build_search_embed(
             + "..."
         )
 
-
     rating = float(
         details.get("vote_average")
         or item.get("vote_average")
         or 0
     )
-
 
     vote_count = int(
         details.get("vote_count")
@@ -1346,13 +1287,11 @@ async def build_search_embed(
         or 0
     )
 
-
     metadata_lines = [
         f"🏷️ *{genre_text}*",
         f"🎭 **{cast_text}**",
         f"🕒 **{runtime_text}**",
     ]
-
 
     if availability:
 
@@ -1360,11 +1299,9 @@ async def build_search_embed(
             f"📺 **{availability}**"
         )
 
-
     metadata = "\n".join(
         metadata_lines
     )
-
 
     description = (
         f"{metadata}\n\n"
@@ -1372,7 +1309,6 @@ async def build_search_embed(
         f"📅 **{format_release_date(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
-
 
     embed = discord.Embed(
         title=display_title,
@@ -1385,7 +1321,6 @@ async def build_search_embed(
         )
     )
 
-
     embed.set_author(
         name=(
             f"PREMIEREBOT  •  "
@@ -1393,12 +1328,10 @@ async def build_search_embed(
         )
     )
 
-
     poster_path = (
         details.get("poster_path")
         or item.get("poster_path")
     )
-
 
     if poster_path:
 
@@ -1408,7 +1341,6 @@ async def build_search_embed(
                 f"{poster_path}"
             )
         )
-
 
     if availability:
 
@@ -1424,7 +1356,6 @@ async def build_search_embed(
         embed.set_footer(
             text="Data provided by TMDb"
         )
-
 
     return embed
 
@@ -1460,13 +1391,18 @@ class ReleaseBrowser(
         self
     ):
 
+        # Both arrows stay active when
+        # there is more than one page.
+        has_multiple_pages = (
+            self.total_pages > 1
+        )
+
         self.previous_button.disabled = (
-            self.page <= 0
+            not has_multiple_pages
         )
 
         self.next_button.disabled = (
-            self.page
-            >= self.total_pages - 1
+            not has_multiple_pages
         )
 
         self.page_button.label = (
@@ -1521,8 +1457,11 @@ class ReleaseBrowser(
         button: discord.ui.Button
     ):
 
-        if self.page > 0:
-            self.page -= 1
+        # Wrap page 1 back to the
+        # final page automatically.
+        self.page = (
+            self.page - 1
+        ) % self.total_pages
 
         self.update_buttons()
 
@@ -1558,11 +1497,11 @@ class ReleaseBrowser(
         button: discord.ui.Button
     ):
 
-        if (
-            self.page
-            < self.total_pages - 1
-        ):
-            self.page += 1
+        # Wrap the final page back
+        # around to page 1.
+        self.page = (
+            self.page + 1
+        ) % self.total_pages
 
         self.update_buttons()
 
@@ -1603,13 +1542,18 @@ class SearchBrowser(
         self
     ):
 
+        # Search results loop in both
+        # directions as well.
+        has_multiple_pages = (
+            self.total_pages > 1
+        )
+
         self.previous_button.disabled = (
-            self.page <= 0
+            not has_multiple_pages
         )
 
         self.next_button.disabled = (
-            self.page
-            >= self.total_pages - 1
+            not has_multiple_pages
         )
 
         self.page_button.label = (
@@ -1663,8 +1607,9 @@ class SearchBrowser(
         button: discord.ui.Button
     ):
 
-        if self.page > 0:
-            self.page -= 1
+        self.page = (
+            self.page - 1
+        ) % self.total_pages
 
         self.update_buttons()
 
@@ -1700,11 +1645,9 @@ class SearchBrowser(
         button: discord.ui.Button
     ):
 
-        if (
-            self.page
-            < self.total_pages - 1
-        ):
-            self.page += 1
+        self.page = (
+            self.page + 1
+        ) % self.total_pages
 
         self.update_buttons()
 
@@ -1832,6 +1775,7 @@ async def upcoming(
     media_type="type"
 )
 @app_commands.choices(
+
     media_type=[
         app_commands.Choice(
             name="Movie",
@@ -1881,7 +1825,7 @@ async def search(
     if not results:
 
         await interaction.followup.send(
-            f"No results found for **{name}**."
+            f"No relevant results found for **{name}**."
         )
 
         return
