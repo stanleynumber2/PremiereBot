@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 2.0")
+print("PremiereBot code version: 2.1")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -28,44 +28,28 @@ if not DISCORD_GUILD_ID:
     raise RuntimeError("DISCORD_GUILD_ID is missing.")
 
 
-GUILD = discord.Object(
-    id=int(DISCORD_GUILD_ID)
-)
+GUILD = discord.Object(id=int(DISCORD_GUILD_ID))
 
 
 class PremiereClient(discord.Client):
-
     def __init__(self):
-        super().__init__(
-            intents=discord.Intents.default()
-        )
-
+        super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-
         print("PremiereBot setup started.")
 
-        self.tree.copy_global_to(
-            guild=GUILD
-        )
+        self.tree.copy_global_to(guild=GUILD)
 
-        synced = await self.tree.sync(
-            guild=GUILD
-        )
+        synced = await self.tree.sync(guild=GUILD)
 
-        print(
-            f"Synced {len(synced)} guild command(s)."
-        )
+        print(f"Synced {len(synced)} guild command(s).")
 
         for command in synced:
             print(f"Synced: /{command.name}")
 
     async def on_ready(self):
-
-        print(
-            f"PremiereBot online as {self.user}"
-        )
+        print(f"PremiereBot online as {self.user}")
 
 
 client = PremiereClient()
@@ -85,21 +69,15 @@ async def fetch_tmdb(
         "language": "en-US",
     }
 
-    timeout = aiohttp.ClientTimeout(
-        total=15
-    )
+    timeout = aiohttp.ClientTimeout(total=15)
 
-    async with aiohttp.ClientSession(
-        timeout=timeout
-    ) as session:
-
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(
             f"{TMDB_BASE_URL}/{endpoint}",
             params=params
         ) as response:
 
             if response.status != 200:
-
                 body = await response.text()
 
                 raise RuntimeError(
@@ -111,9 +89,7 @@ async def fetch_tmdb(
             return await response.json()
 
 
-def discord_date(
-    date_string: str
-) -> str:
+def discord_date(date_string: str) -> str:
 
     release_date = datetime.strptime(
         date_string,
@@ -123,9 +99,7 @@ def discord_date(
         tzinfo=timezone.utc
     )
 
-    unix_time = int(
-        release_date.timestamp()
-    )
+    unix_time = int(release_date.timestamp())
 
     return (
         f"<t:{unix_time}:D>\n"
@@ -133,9 +107,7 @@ def discord_date(
     )
 
 
-def score_meter(
-    rating: float
-) -> str:
+def score_meter(rating: float) -> str:
 
     rating = max(
         0,
@@ -156,9 +128,7 @@ def score_meter(
     )
 
 
-async def get_genres(
-    media_type: str
-) -> dict:
+async def get_genres(media_type: str) -> dict:
 
     data = await fetch_tmdb(
         f"genre/{media_type}/list"
@@ -166,10 +136,7 @@ async def get_genres(
 
     return {
         genre["id"]: genre["name"]
-        for genre in data.get(
-            "genres",
-            []
-        )
+        for genre in data.get("genres", [])
     }
 
 
@@ -178,20 +145,11 @@ async def get_upcoming(
     timeframe: str
 ) -> list[dict]:
 
-    today = datetime.now(
-        timezone.utc
-    ).date()
+    today = datetime.now(timezone.utc).date()
 
-    days = (
-        7
-        if timeframe == "week"
-        else 30
-    )
+    days = 7 if timeframe == "week" else 30
 
-    end_date = (
-        today + timedelta(days=days)
-    )
-
+    end_date = today + timedelta(days=days)
 
     if media_type == "movie":
 
@@ -199,10 +157,14 @@ async def get_upcoming(
         date_field = "release_date"
 
         params = {
+            # U.S. release information only
             "region": "US",
 
-            "with_release_type":
-                "2|3",
+            # Prefer standard theatrical release,
+            # then limited theatrical.
+            # 3 = Theatrical
+            # 2 = Limited Theatrical
+            "with_release_type": "3|2",
 
             "release_date.gte":
                 today.isoformat(),
@@ -219,6 +181,8 @@ async def get_upcoming(
 
     else:
 
+        # TV stays independent from the
+        # movie-specific U.S. theatrical filtering.
         endpoint = "discover/tv"
         date_field = "first_air_date"
 
@@ -234,8 +198,10 @@ async def get_upcoming(
 
             "include_null_first_air_dates":
                 "false",
-        }
 
+            "include_adult":
+                "false",
+        }
 
     data = await fetch_tmdb(
         endpoint,
@@ -244,22 +210,14 @@ async def get_upcoming(
 
     results = []
 
+    for item in data.get("results", []):
 
-    for item in data.get(
-        "results",
-        []
-    ):
-
-        date_string = item.get(
-            date_field
-        )
+        date_string = item.get(date_field)
 
         if not date_string:
             continue
 
-
         try:
-
             item_date = datetime.strptime(
                 date_string,
                 "%Y-%m-%d"
@@ -268,14 +226,8 @@ async def get_upcoming(
         except ValueError:
             continue
 
-
-        if (
-            today
-            <= item_date
-            <= end_date
-        ):
+        if today <= item_date <= end_date:
             results.append(item)
-
 
     return results
 
@@ -330,7 +282,6 @@ def build_release_embed(
 
 
     if len(overview) > 500:
-
         overview = (
             overview[:497].rstrip()
             + "..."
@@ -352,25 +303,17 @@ def build_release_embed(
     genre_names = [
         genres[genre_id]
         for genre_id
-        in item.get(
-            "genre_ids",
-            []
-        )
+        in item.get("genre_ids", [])
         if genre_id in genres
     ]
 
 
     if genre_names:
-
         genre_text = " • ".join(
             genre_names[:3]
         )
-
     else:
-
-        genre_text = (
-            "Genre unavailable"
-        )
+        genre_text = "Genre unavailable"
 
 
     embed = discord.Embed(
@@ -469,25 +412,21 @@ def build_release_embed(
     timeframe="time"
 )
 @app_commands.choices(
-
     media_type=[
         app_commands.Choice(
             name="Movie",
             value="movie"
         ),
-
         app_commands.Choice(
             name="TV",
             value="tv"
         ),
     ],
-
     timeframe=[
         app_commands.Choice(
             name="Week",
             value="week"
         ),
-
         app_commands.Choice(
             name="Month",
             value="month"
@@ -550,7 +489,7 @@ async def upcoming(
 
 
     media_heading = (
-        "MOVIE RELEASES"
+        "U.S. MOVIE RELEASES"
         if media_value == "movie"
         else "TV PREMIERES"
     )
