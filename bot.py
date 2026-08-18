@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("ReleaseBot code version: 6.1")
+print("ReleaseBot code version: 6.2")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -2483,23 +2483,16 @@ class SearchBrowser(discord.ui.View):
 
 MEDIA_CHOICES = [
     app_commands.Choice(
-        name="Movies & Shows",
-        value="screen"
-    ),
-    app_commands.Choice(
-        name="Games",
-        value="game"
-    ),
-]
-
-KIND_CHOICES = [
-    app_commands.Choice(
         name="Movie",
         value="movie"
     ),
     app_commands.Choice(
         name="Series",
         value="tv"
+    ),
+    app_commands.Choice(
+        name="Game",
+        value="game"
     ),
 ]
 
@@ -2517,17 +2510,10 @@ TIME_CHOICES = [
 
 def validate_optional_filters(
     media: str,
-    kind: app_commands.Choice[str] | None,
     platform: str | None
 ) -> str | None:
 
-    if media == "game" and kind is not None:
-        return (
-            "`kind` only applies to Movies & Shows. "
-            "Leave it blank when searching games."
-        )
-
-    if media == "screen" and platform:
+    if media != "game" and platform:
         return (
             "`platform` only applies to Games. "
             "Leave it blank for movies and series."
@@ -2545,14 +2531,12 @@ def validate_optional_filters(
     description="Search movies, series, or games."
 )
 @app_commands.describe(
-    media="Choose Movies & Shows or Games.",
+    media="Choose Movie, Series, or Game.",
     title="Title to search for.",
-    kind="Optional: narrow Movies & Shows to Movie or Series.",
     platform="Optional: narrow Games to any platform or console."
 )
 @app_commands.choices(
-    media=MEDIA_CHOICES,
-    kind=KIND_CHOICES
+    media=MEDIA_CHOICES
 )
 @app_commands.autocomplete(
     platform=platform_autocomplete
@@ -2561,13 +2545,11 @@ async def search(
     interaction: discord.Interaction,
     media: app_commands.Choice[str],
     title: str,
-    kind: app_commands.Choice[str] | None = None,
     platform: str | None = None
 ):
 
     filter_error = validate_optional_filters(
         media.value,
-        kind,
         platform
     )
 
@@ -2589,7 +2571,7 @@ async def search(
         else:
             results = await search_tmdb_titles(
                 title,
-                kind.value if kind else None
+                media.value
             )
 
     except Exception as error:
@@ -2642,14 +2624,12 @@ async def search(
     description="Countdown to an upcoming movie, series, or game release."
 )
 @app_commands.describe(
-    media="Choose Movies & Shows or Games.",
+    media="Choose Movie, Series, or Game.",
     title="Upcoming title to search for.",
-    kind="Optional: narrow Movies & Shows to Movie or Series.",
     platform="Optional: narrow a game countdown to a platform."
 )
 @app_commands.choices(
-    media=MEDIA_CHOICES,
-    kind=KIND_CHOICES
+    media=MEDIA_CHOICES
 )
 @app_commands.autocomplete(
     platform=platform_autocomplete
@@ -2658,13 +2638,11 @@ async def countdown(
     interaction: discord.Interaction,
     media: app_commands.Choice[str],
     title: str,
-    kind: app_commands.Choice[str] | None = None,
     platform: str | None = None
 ):
 
     filter_error = validate_optional_filters(
         media.value,
-        kind,
         platform
     )
 
@@ -2693,7 +2671,7 @@ async def countdown(
         else:
             results = await search_tmdb_titles(
                 title,
-                kind.value if kind else None
+                media.value
             )
 
             future_match = (
@@ -2757,15 +2735,13 @@ async def countdown(
     description="Browse upcoming movie, series, or game releases."
 )
 @app_commands.describe(
-    media="Choose Movies & Shows or Games.",
+    media="Choose Movie, Series, or Game.",
     time="Choose week or month.",
-    kind="Optional: narrow Movies & Shows to Movie or Series.",
     platform="Optional: narrow Games to any platform or console."
 )
 @app_commands.choices(
     media=MEDIA_CHOICES,
-    time=TIME_CHOICES,
-    kind=KIND_CHOICES
+    time=TIME_CHOICES
 )
 @app_commands.autocomplete(
     platform=platform_autocomplete
@@ -2774,13 +2750,11 @@ async def upcoming(
     interaction: discord.Interaction,
     media: app_commands.Choice[str],
     time: app_commands.Choice[str],
-    kind: app_commands.Choice[str] | None = None,
     platform: str | None = None
 ):
 
     filter_error = validate_optional_filters(
         media.value,
-        kind,
         platform
     )
 
@@ -2801,7 +2775,7 @@ async def upcoming(
             )
         else:
             results = await get_upcoming_tmdb(
-                kind.value if kind else None,
+                media.value,
                 time.value
             )
 
