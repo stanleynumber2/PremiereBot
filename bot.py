@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 3.1")
+print("PremiereBot code version: 3.2")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -28,7 +28,9 @@ if not DISCORD_GUILD_ID:
     raise RuntimeError("DISCORD_GUILD_ID is missing.")
 
 
-GUILD = discord.Object(id=int(DISCORD_GUILD_ID))
+GUILD = discord.Object(
+    id=int(DISCORD_GUILD_ID)
+)
 
 
 class PremiereClient(discord.Client):
@@ -37,21 +39,35 @@ class PremiereClient(discord.Client):
         super().__init__(
             intents=discord.Intents.default()
         )
+
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
+
         print("PremiereBot setup started.")
 
-        self.tree.copy_global_to(guild=GUILD)
-        synced = await self.tree.sync(guild=GUILD)
+        self.tree.copy_global_to(
+            guild=GUILD
+        )
 
-        print(f"Synced {len(synced)} guild command(s).")
+        synced = await self.tree.sync(
+            guild=GUILD
+        )
+
+        print(
+            f"Synced {len(synced)} guild command(s)."
+        )
 
         for command in synced:
-            print(f"Synced: /{command.name}")
+            print(
+                f"Synced: /{command.name}"
+            )
 
     async def on_ready(self):
-        print(f"PremiereBot online as {self.user}")
+
+        print(
+            f"PremiereBot online as {self.user}"
+        )
 
 
 client = PremiereClient()
@@ -71,7 +87,9 @@ async def fetch_tmdb(
         "language": "en-US",
     }
 
-    timeout = aiohttp.ClientTimeout(total=15)
+    timeout = aiohttp.ClientTimeout(
+        total=15
+    )
 
     async with aiohttp.ClientSession(
         timeout=timeout
@@ -83,6 +101,7 @@ async def fetch_tmdb(
         ) as response:
 
             if response.status != 200:
+
                 body = await response.text()
 
                 raise RuntimeError(
@@ -99,8 +118,13 @@ async def get_details(
     tmdb_id: int
 ) -> dict:
 
+    # Pull the normal details AND credits
+    # in one TMDb request.
     return await fetch_tmdb(
-        f"{media_type}/{tmdb_id}"
+        f"{media_type}/{tmdb_id}",
+        {
+            "append_to_response": "credits"
+        }
     )
 
 
@@ -112,9 +136,13 @@ def format_runtime(
     runtime = None
 
     if media_type == "movie":
-        runtime = details.get("runtime")
+
+        runtime = details.get(
+            "runtime"
+        )
 
     else:
+
         runtimes = (
             details.get("episode_run_time")
             or []
@@ -138,25 +166,64 @@ def format_runtime(
     return f"{minutes}m"
 
 
-def format_genres(details: dict) -> str:
+def format_genres(
+    details: dict
+) -> str:
 
     genres = [
         genre.get("name")
-        for genre in details.get("genres", [])
+        for genre in details.get(
+            "genres",
+            []
+        )
         if genre.get("name")
     ]
 
     if not genres:
         return "Genre unavailable"
 
-    return " • ".join(genres[:3])
+    return " • ".join(
+        genres[:3]
+    )
+
+
+def format_cast(
+    details: dict
+) -> str:
+
+    credits = (
+        details.get("credits")
+        or {}
+    )
+
+    cast = (
+        credits.get("cast")
+        or []
+    )
+
+    names = []
+
+    for actor in cast:
+
+        name = actor.get("name")
+
+        if name:
+            names.append(name)
+
+        if len(names) == 3:
+            break
+
+    if not names:
+        return "Cast unavailable"
+
+    return " • ".join(names)
 
 
 def format_release_date(
     date_string: str
 ) -> str:
 
-    date = datetime.strptime(
+    release_date = datetime.strptime(
         date_string,
         "%Y-%m-%d"
     ).replace(
@@ -164,9 +231,13 @@ def format_release_date(
         tzinfo=timezone.utc
     )
 
-    unix_time = int(date.timestamp())
+    unix_time = int(
+        release_date.timestamp()
+    )
 
-    return f"<t:{unix_time}:D>"
+    return (
+        f"<t:{unix_time}:D>"
+    )
 
 
 def format_countdown(
@@ -181,9 +252,13 @@ def format_countdown(
         tzinfo=timezone.utc
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(
+        timezone.utc
+    )
 
-    remaining = release_date - now
+    remaining = (
+        release_date - now
+    )
 
     total_seconds = int(
         remaining.total_seconds()
@@ -210,12 +285,18 @@ def format_countdown(
     parts = []
 
     if days:
-        parts.append(f"{days}d")
+        parts.append(
+            f"{days}d"
+        )
 
     if hours or days:
-        parts.append(f"{hours}h")
+        parts.append(
+            f"{hours}h"
+        )
 
-    parts.append(f"{minutes}m")
+    parts.append(
+        f"{minutes}m"
+    )
 
     return " ".join(parts)
 
@@ -226,6 +307,7 @@ def score_meter(
 ) -> str:
 
     if vote_count <= 0:
+
         return (
             "⭐️ **Not Rated Yet**\n"
             "`▱▱▱▱▱▱▱▱▱▱`"
@@ -266,7 +348,9 @@ async def get_upcoming(
     )
 
     end_date = (
-        today + timedelta(days=days)
+        today + timedelta(
+            days=days
+        )
     )
 
     if media_type == "movie":
@@ -279,7 +363,7 @@ async def get_upcoming(
 
             # U.S. theatrical releases
             # 3 = Theatrical
-            # 2 = Limited Theatrical
+            # 2 = Limited theatrical
             "with_release_type": "3|2",
 
             "release_date.gte":
@@ -337,6 +421,7 @@ async def get_upcoming(
             continue
 
         try:
+
             item_date = datetime.strptime(
                 date_string,
                 "%Y-%m-%d"
@@ -352,14 +437,18 @@ async def get_upcoming(
         ):
             results.append(item)
 
-    # Release date first.
-    # More popular titles first
-    # when dates are the same.
+    # Date first.
+    # Popularity breaks ties.
     results.sort(
         key=lambda item: (
-            item.get(date_field, ""),
+            item.get(
+                date_field,
+                ""
+            ),
             -float(
-                item.get("popularity")
+                item.get(
+                    "popularity"
+                )
                 or 0
             )
         )
@@ -389,7 +478,9 @@ async def build_release_embed(
         )
 
         date_string = (
-            item.get("release_date")
+            item.get(
+                "release_date"
+            )
         )
 
         media_label = "MOVIE"
@@ -403,7 +494,9 @@ async def build_release_embed(
         )
 
         date_string = (
-            item.get("first_air_date")
+            item.get(
+                "first_air_date"
+            )
         )
 
         media_label = "TV"
@@ -415,6 +508,10 @@ async def build_release_embed(
     )
 
     genre_text = format_genres(
+        details
+    )
+
+    cast_text = format_cast(
         details
     )
 
@@ -431,6 +528,7 @@ async def build_release_embed(
     ).strip()
 
     if len(overview) > 650:
+
         overview = (
             overview[:647].rstrip()
             + "..."
@@ -449,7 +547,8 @@ async def build_release_embed(
     )
 
     description = (
-        f"*{genre_text}*\n"
+        f"🏷️ *{genre_text}*\n"
+        f"🎭 **{cast_text}**\n"
         f"🕒 **{runtime_text}**\n\n"
         f"{overview}\n\n"
         f"📅 **{format_release_date(date_string)}**\n"
@@ -481,6 +580,7 @@ async def build_release_embed(
     )
 
     if poster_path:
+
         embed.set_image(
             url=(
                 f"{TMDB_IMAGE_URL}"
@@ -515,12 +615,16 @@ class ReleaseBrowser(
         self.requester_id = requester_id
 
         self.page = 0
-        self.total_pages = len(results)
+        self.total_pages = len(
+            results
+        )
 
         self.update_buttons()
 
 
-    def update_buttons(self):
+    def update_buttons(
+        self
+    ):
 
         self.previous_button.disabled = (
             self.page <= 0
