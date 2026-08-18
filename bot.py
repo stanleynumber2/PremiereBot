@@ -1,4 +1,5 @@
 import os
+import math
 from datetime import datetime, timedelta, timezone
 
 import aiohttp
@@ -6,7 +7,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 2.1")
+print("PremiereBot code version: 3.0")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -16,6 +17,8 @@ DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID")
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_WEB_URL = "https://www.themoviedb.org"
 TMDB_IMAGE_URL = "https://image.tmdb.org/t/p/w500"
+
+ITEMS_PER_PAGE = 3
 
 
 if not DISCORD_TOKEN:
@@ -32,24 +35,38 @@ GUILD = discord.Object(id=int(DISCORD_GUILD_ID))
 
 
 class PremiereClient(discord.Client):
+
     def __init__(self):
-        super().__init__(intents=discord.Intents.default())
+        super().__init__(
+            intents=discord.Intents.default()
+        )
+
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
+
         print("PremiereBot setup started.")
 
-        self.tree.copy_global_to(guild=GUILD)
+        self.tree.copy_global_to(
+            guild=GUILD
+        )
 
-        synced = await self.tree.sync(guild=GUILD)
+        synced = await self.tree.sync(
+            guild=GUILD
+        )
 
-        print(f"Synced {len(synced)} guild command(s).")
+        print(
+            f"Synced {len(synced)} guild command(s)."
+        )
 
         for command in synced:
             print(f"Synced: /{command.name}")
 
     async def on_ready(self):
-        print(f"PremiereBot online as {self.user}")
+
+        print(
+            f"PremiereBot online as {self.user}"
+        )
 
 
 client = PremiereClient()
@@ -69,15 +86,21 @@ async def fetch_tmdb(
         "language": "en-US",
     }
 
-    timeout = aiohttp.ClientTimeout(total=15)
+    timeout = aiohttp.ClientTimeout(
+        total=15
+    )
 
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    async with aiohttp.ClientSession(
+        timeout=timeout
+    ) as session:
+
         async with session.get(
             f"{TMDB_BASE_URL}/{endpoint}",
             params=params
         ) as response:
 
             if response.status != 200:
+
                 body = await response.text()
 
                 raise RuntimeError(
@@ -89,7 +112,80 @@ async def fetch_tmdb(
             return await response.json()
 
 
-def discord_date(date_string: str) -> str:
+async def get_details(
+    media_type: str,
+    tmdb_id: int
+) -> dict:
+
+    return await fetch_tmdb(
+        f"{media_type}/{tmdb_id}"
+    )
+
+
+def format_runtime(
+    details: dict,
+    media_type: str
+) -> str:
+
+    runtime = None
+
+    if media_type == "movie":
+
+        runtime = details.get(
+            "runtime"
+        )
+
+    else:
+
+        runtimes = details.get(
+            "episode_run_time"
+        ) or []
+
+        if runtimes:
+            runtime = runtimes[0]
+
+
+    if not runtime:
+        return "Runtime unavailable"
+
+
+    hours = runtime // 60
+    minutes = runtime % 60
+
+
+    if hours and minutes:
+        return f"{hours}h {minutes}m"
+
+    if hours:
+        return f"{hours}h"
+
+    return f"{minutes}m"
+
+
+def format_genres(
+    details: dict
+) -> str:
+
+    genres = [
+        genre.get("name")
+        for genre in details.get(
+            "genres",
+            []
+        )
+        if genre.get("name")
+    ]
+
+    if not genres:
+        return "Genre unavailable"
+
+    return " • ".join(
+        genres[:3]
+    )
+
+
+def discord_date(
+    date_string: str
+) -> tuple[str, str]:
 
     release_date = datetime.strptime(
         date_string,
@@ -99,15 +195,33 @@ def discord_date(date_string: str) -> str:
         tzinfo=timezone.utc
     )
 
-    unix_time = int(release_date.timestamp())
-
-    return (
-        f"<t:{unix_time}:D>\n"
-        f"⏳ <t:{unix_time}:R>"
+    unix_time = int(
+        release_date.timestamp()
     )
 
+    full_date = (
+        f"<t:{unix_time}:D>"
+    )
 
-def score_meter(rating: float) -> str:
+    countdown = (
+        f"<t:{unix_time}:R>"
+    )
+
+    return full_date, countdown
+
+
+def score_meter(
+    rating: float,
+    vote_count: int
+) -> str:
+
+    if vote_count <= 0:
+
+        return (
+            "⭐️ **Not Rated Yet**\n"
+            "`▱▱▱▱▱▱▱▱▱▱`"
+        )
+
 
     rating = max(
         0,
@@ -123,21 +237,9 @@ def score_meter(rating: float) -> str:
     )
 
     return (
-        f"⭐ **{rating:.1f}/10**\n"
+        f"⭐️ **{rating:.1f}/10**\n"
         f"`{bar}`"
     )
-
-
-async def get_genres(media_type: str) -> dict:
-
-    data = await fetch_tmdb(
-        f"genre/{media_type}/list"
-    )
-
-    return {
-        genre["id"]: genre["name"]
-        for genre in data.get("genres", [])
-    }
 
 
 async def get_upcoming(
@@ -145,11 +247,20 @@ async def get_upcoming(
     timeframe: str
 ) -> list[dict]:
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(
+        timezone.utc
+    ).date()
 
-    days = 7 if timeframe == "week" else 30
+    days = (
+        7
+        if timeframe == "week"
+        else 30
+    )
 
-    end_date = today + timedelta(days=days)
+    end_date = (
+        today + timedelta(days=days)
+    )
+
 
     if media_type == "movie":
 
@@ -157,11 +268,9 @@ async def get_upcoming(
         date_field = "release_date"
 
         params = {
-            # U.S. release information only
             "region": "US",
 
-            # Prefer standard theatrical release,
-            # then limited theatrical.
+            # U.S. theatrical releases:
             # 3 = Theatrical
             # 2 = Limited Theatrical
             "with_release_type": "3|2",
@@ -181,8 +290,6 @@ async def get_upcoming(
 
     else:
 
-        # TV stays independent from the
-        # movie-specific U.S. theatrical filtering.
         endpoint = "discover/tv"
         date_field = "first_air_date"
 
@@ -203,6 +310,7 @@ async def get_upcoming(
                 "false",
         }
 
+
     data = await fetch_tmdb(
         endpoint,
         params
@@ -210,14 +318,22 @@ async def get_upcoming(
 
     results = []
 
-    for item in data.get("results", []):
 
-        date_string = item.get(date_field)
+    for item in data.get(
+        "results",
+        []
+    ):
+
+        date_string = item.get(
+            date_field
+        )
 
         if not date_string:
             continue
 
+
         try:
+
             item_date = datetime.strptime(
                 date_string,
                 "%Y-%m-%d"
@@ -226,46 +342,73 @@ async def get_upcoming(
         except ValueError:
             continue
 
-        if today <= item_date <= end_date:
+
+        if (
+            today
+            <= item_date
+            <= end_date
+        ):
             results.append(item)
+
+
+    # Release date first.
+    # Popular releases appear first when
+    # multiple titles share the same date.
+    results.sort(
+        key=lambda item: (
+            item.get(date_field, ""),
+            -float(
+                item.get("popularity")
+                or 0
+            )
+        )
+    )
+
 
     return results
 
 
-def build_release_embed(
+async def build_release_embed(
     item: dict,
-    media_type: str,
-    genres: dict
+    media_type: str
 ) -> discord.Embed:
+
+    tmdb_id = item.get("id")
+
+    details = await get_details(
+        media_type,
+        tmdb_id
+    )
+
 
     if media_type == "movie":
 
-        title = item.get(
-            "title",
-            "Untitled"
+        title = (
+            details.get("title")
+            or item.get("title")
+            or "Untitled"
         )
 
-        date_string = item.get(
-            "release_date"
+        date_string = (
+            item.get("release_date")
         )
 
         media_label = "MOVIE"
 
     else:
 
-        title = item.get(
-            "name",
-            "Untitled"
+        title = (
+            details.get("name")
+            or item.get("name")
+            or "Untitled"
         )
 
-        date_string = item.get(
-            "first_air_date"
+        date_string = (
+            item.get("first_air_date")
         )
 
-        media_label = "TV PREMIERE"
+        media_label = "TV"
 
-
-    tmdb_id = item.get("id")
 
     page_url = (
         f"{TMDB_WEB_URL}/"
@@ -274,111 +417,72 @@ def build_release_embed(
     )
 
 
+    genre_text = format_genres(
+        details
+    )
+
+
+    runtime_text = format_runtime(
+        details,
+        media_type
+    )
+
+
     overview = (
-        item.get("overview")
+        details.get("overview")
+        or item.get("overview")
         or
         "No synopsis is currently available."
     ).strip()
 
 
-    if len(overview) > 500:
+    if len(overview) > 600:
+
         overview = (
-            overview[:497].rstrip()
+            overview[:597].rstrip()
             + "..."
         )
 
 
     rating = float(
-        item.get("vote_average")
+        details.get("vote_average")
+        or item.get("vote_average")
         or 0
     )
 
 
     vote_count = int(
-        item.get("vote_count")
+        details.get("vote_count")
+        or item.get("vote_count")
         or 0
     )
 
 
-    genre_names = [
-        genres[genre_id]
-        for genre_id
-        in item.get("genre_ids", [])
-        if genre_id in genres
-    ]
+    release_date, countdown = (
+        discord_date(date_string)
+    )
 
 
-    if genre_names:
-        genre_text = " • ".join(
-            genre_names[:3]
-        )
-    else:
-        genre_text = "Genre unavailable"
+    description = (
+        f"*{genre_text}*\n"
+        f"🕒 **{runtime_text}**\n\n"
+        f"{overview}\n\n"
+        f"📅 **{release_date}**\n"
+        f"⏳ **{countdown}**\n"
+        f"{score_meter(rating, vote_count)}"
+    )
 
 
     embed = discord.Embed(
         title=title,
         url=page_url,
-        description=overview,
+        description=description,
         color=discord.Color.from_rgb(
             40,
             105,
             150
         )
     )
-
-
-    embed.add_field(
-        name="📅 RELEASE",
-        value=discord_date(
-            date_string
-        ),
-        inline=True
-    )
-
-
-    if vote_count > 0:
-
-        rating_text = (
-            score_meter(rating)
-            + f"\n*{vote_count:,} ratings*"
-        )
-
-    else:
-
-        rating_text = (
-            "⭐ **Not Rated Yet**\n"
-            "`▱▱▱▱▱▱▱▱▱▱`"
-        )
-
-
-    embed.add_field(
-        name="🍿 TMDb SCORE",
-        value=rating_text,
-        inline=True
-    )
-
-
-    embed.add_field(
-        name="🎭 GENRES",
-        value=genre_text,
-        inline=False
-    )
-
-
-    poster_path = item.get(
-        "poster_path"
-    )
-
-
-    if poster_path:
-
-        embed.set_thumbnail(
-            url=(
-                f"{TMDB_IMAGE_URL}"
-                f"{poster_path}"
-            )
-        )
 
 
     embed.set_author(
@@ -389,19 +493,201 @@ def build_release_embed(
     )
 
 
-    embed.set_footer(
-        text=(
-            "Movie & TV data provided by TMDb"
+    poster_path = (
+        details.get("poster_path")
+        or item.get("poster_path")
+    )
+
+
+    if poster_path:
+
+        # Large poster rather than
+        # Discord's small thumbnail.
+        embed.set_image(
+            url=(
+                f"{TMDB_IMAGE_URL}"
+                f"{poster_path}"
+            )
         )
+
+
+    embed.set_footer(
+        text="Data provided by TMDb"
     )
 
 
     return embed
 
 
+class ReleaseBrowser(
+    discord.ui.View
+):
+
+    def __init__(
+        self,
+        results: list[dict],
+        media_type: str,
+        requester_id: int
+    ):
+
+        super().__init__(
+            timeout=300
+        )
+
+        self.results = results
+        self.media_type = media_type
+        self.requester_id = requester_id
+
+        self.page = 0
+
+        self.total_pages = max(
+            1,
+            math.ceil(
+                len(results)
+                / ITEMS_PER_PAGE
+            )
+        )
+
+        self.update_buttons()
+
+
+    def update_buttons(self):
+
+        self.previous_button.disabled = (
+            self.page <= 0
+        )
+
+        self.next_button.disabled = (
+            self.page
+            >= self.total_pages - 1
+        )
+
+        self.page_button.label = (
+            f"{self.page + 1} "
+            f"/ {self.total_pages}"
+        )
+
+
+    async def interaction_check(
+        self,
+        interaction: discord.Interaction
+    ) -> bool:
+
+        if (
+            interaction.user.id
+            != self.requester_id
+        ):
+
+            await interaction.response.send_message(
+                "Run `/upcoming` to open "
+                "your own PremiereBot browser.",
+                ephemeral=True
+            )
+
+            return False
+
+        return True
+
+
+    async def get_page_embeds(
+        self
+    ) -> list[discord.Embed]:
+
+        start = (
+            self.page
+            * ITEMS_PER_PAGE
+        )
+
+        end = (
+            start
+            + ITEMS_PER_PAGE
+        )
+
+        page_items = (
+            self.results[start:end]
+        )
+
+        embeds = []
+
+        for item in page_items:
+
+            embed = await build_release_embed(
+                item,
+                self.media_type
+            )
+
+            embeds.append(embed)
+
+        return embeds
+
+
+    @discord.ui.button(
+        label="Previous",
+        emoji="◀️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def previous_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if self.page > 0:
+            self.page -= 1
+
+        self.update_buttons()
+
+        embeds = await self.get_page_embeds()
+
+        await interaction.response.edit_message(
+            embeds=embeds,
+            view=self
+        )
+
+
+    @discord.ui.button(
+        label="1 / 1",
+        style=discord.ButtonStyle.secondary,
+        disabled=True
+    )
+    async def page_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        pass
+
+
+    @discord.ui.button(
+        label="Next",
+        emoji="▶️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def next_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if (
+            self.page
+            < self.total_pages - 1
+        ):
+            self.page += 1
+
+        self.update_buttons()
+
+        embeds = await self.get_page_embeds()
+
+        await interaction.response.edit_message(
+            embeds=embeds,
+            view=self
+        )
+
+
 @client.tree.command(
     name="upcoming",
-    description="See upcoming movie or TV releases."
+    description="Browse upcoming movie or TV releases."
 )
 @app_commands.describe(
     media_type="Choose movies or TV.",
@@ -412,21 +698,25 @@ def build_release_embed(
     timeframe="time"
 )
 @app_commands.choices(
+
     media_type=[
         app_commands.Choice(
             name="Movie",
             value="movie"
         ),
+
         app_commands.Choice(
             name="TV",
             value="tv"
         ),
     ],
+
     timeframe=[
         app_commands.Choice(
             name="Week",
             value="week"
         ),
+
         app_commands.Choice(
             name="Month",
             value="month"
@@ -442,19 +732,11 @@ async def upcoming(
     await interaction.response.defer()
 
 
-    media_value = media_type.value
-    time_value = timeframe.value
-
-
     try:
 
         results = await get_upcoming(
-            media_value,
-            time_value
-        )
-
-        genres = await get_genres(
-            media_value
+            media_type.value,
+            timeframe.value
         )
 
     except Exception as error:
@@ -481,51 +763,34 @@ async def upcoming(
         return
 
 
-    period = (
-        "NEXT 7 DAYS"
-        if time_value == "week"
-        else "NEXT 30 DAYS"
+    view = ReleaseBrowser(
+        results=results,
+        media_type=media_type.value,
+        requester_id=interaction.user.id
     )
 
 
-    media_heading = (
-        "U.S. MOVIE RELEASES"
-        if media_value == "movie"
-        else "TV PREMIERES"
-    )
+    try:
 
+        embeds = await view.get_page_embeds()
 
-    header = discord.Embed(
-        title=f"🎬 {media_heading}",
-        description=(
-            f"**{period}**\n"
-            f"Showing the next "
-            f"{min(5, len(results))} releases."
-        ),
-        color=discord.Color.from_rgb(
-            40,
-            105,
-            150
+    except Exception as error:
+
+        print(
+            f"TMDb detail error: {error}"
         )
-    )
 
-
-    embeds = [header]
-
-
-    for item in results[:5]:
-
-        embeds.append(
-            build_release_embed(
-                item,
-                media_value,
-                genres
-            )
+        await interaction.followup.send(
+            "PremiereBot found releases, "
+            "but couldn't load their details."
         )
+
+        return
 
 
     await interaction.followup.send(
-        embeds=embeds
+        embeds=embeds,
+        view=view
     )
 
 
