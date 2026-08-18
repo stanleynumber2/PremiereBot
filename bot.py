@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 4.4")
+print("PremiereBot code version: 5.0")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -18,6 +18,7 @@ DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID")
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_WEB_URL = "https://www.themoviedb.org"
 TMDB_IMAGE_URL = "https://image.tmdb.org/t/p/w780"
+TMDB_THUMBNAIL_URL = "https://image.tmdb.org/t/p/w342"
 
 
 if not DISCORD_TOKEN:
@@ -327,6 +328,19 @@ def format_search_availability(
     )
 
 
+def parse_tmdb_date(
+    date_string: str
+) -> datetime:
+
+    return datetime.strptime(
+        date_string,
+        "%Y-%m-%d"
+    ).replace(
+        hour=12,
+        tzinfo=timezone.utc
+    )
+
+
 def format_release_date(
     date_string: str
 ) -> str:
@@ -334,12 +348,8 @@ def format_release_date(
     if not date_string:
         return "Date unavailable"
 
-    release_date = datetime.strptime(
-        date_string,
-        "%Y-%m-%d"
-    ).replace(
-        hour=12,
-        tzinfo=timezone.utc
+    release_date = parse_tmdb_date(
+        date_string
     )
 
     unix_time = int(
@@ -353,12 +363,8 @@ def format_countdown(
     date_string: str
 ) -> str:
 
-    release_date = datetime.strptime(
-        date_string,
-        "%Y-%m-%d"
-    ).replace(
-        hour=12,
-        tzinfo=timezone.utc
+    release_date = parse_tmdb_date(
+        date_string
     )
 
     now = datetime.now(
@@ -402,6 +408,52 @@ def format_countdown(
     parts.append(f"{minutes}m")
 
     return " ".join(parts)
+
+
+def format_exact_countdown(
+    date_string: str
+) -> str:
+
+    release_date = parse_tmdb_date(
+        date_string
+    )
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    remaining = (
+        release_date - now
+    )
+
+    total_seconds = int(
+        remaining.total_seconds()
+    )
+
+    if total_seconds <= 0:
+        return "Released"
+
+    days, remainder = divmod(
+        total_seconds,
+        86400
+    )
+
+    hours, remainder = divmod(
+        remainder,
+        3600
+    )
+
+    minutes, seconds = divmod(
+        remainder,
+        60
+    )
+
+    return (
+        f"{days}d "
+        f"{hours}h "
+        f"{minutes}m "
+        f"{seconds}s"
+    )
 
 
 def score_meter(
@@ -586,6 +638,120 @@ async def get_movie_collection_parts(
     )
 
     return parts
+
+
+async def get_us_movie_release_date(
+    movie_id: int
+) -> str | None:
+
+    data = await fetch_tmdb(
+        f"movie/{movie_id}/release_dates"
+    )
+
+    theatrical_dates = []
+
+    for country in data.get(
+        "results",
+        []
+    ):
+
+        if country.get(
+            "iso_3166_1"
+        ) != "US":
+            continue
+
+        for release in country.get(
+            "release_dates",
+            []
+        ):
+
+            release_type = release.get(
+                "type"
+            )
+
+            # 3 = Theatrical
+            # 2 = Limited theatrical
+            if release_type not in (
+                3,
+                2
+            ):
+                continue
+
+            raw_date = release.get(
+                "release_date"
+            )
+
+            if not raw_date:
+                continue
+
+            try:
+
+                parsed = datetime.fromisoformat(
+                    raw_date.replace(
+                        "Z",
+                        "+00:00"
+                    )
+                )
+
+            except ValueError:
+                continue
+
+            theatrical_dates.append(
+                (
+                    release_type,
+                    parsed
+                )
+            )
+
+    if not theatrical_dates:
+        return None
+
+
+    today = datetime.now(
+        timezone.utc
+    ).date()
+
+
+    future_dates = [
+        entry
+        for entry in theatrical_dates
+        if entry[1].date() >= today
+    ]
+
+
+    # For an upcoming movie, prefer
+    # the next future U.S. theatrical date.
+    if future_dates:
+
+        future_dates.sort(
+            key=lambda entry: (
+                entry[1].date(),
+                0 if entry[0] == 3 else 1
+            )
+        )
+
+        return (
+            future_dates[0][1]
+            .date()
+            .isoformat()
+        )
+
+
+    # If the movie already released,
+    # use its earliest full/limited
+    # U.S. theatrical date.
+    theatrical_dates.sort(
+        key=lambda entry: (
+            entry[1].date(),
+            0 if entry[0] == 3 else 1
+        )
+    )
+
+    return (
+        theatrical_dates[0][1]
+        .date()
+        .isoformat()
+    )
 
 
 async def verify_us_movie_release(
@@ -1215,9 +1381,6 @@ async def search_titles(
 
     collection_results = []
 
-    # Only movies have TMDb collections.
-    # Use the strongest movie match as
-    # the collection/franchise anchor.
     strongest_movie = next(
         (
             item
@@ -1278,19 +1441,16 @@ async def search_titles(
             )
 
 
-    # Strongest direct match first.
     if relevant:
         add_unique(
             relevant[0]
         )
 
 
-    # Then franchise/collection members.
     for item in collection_results:
         add_unique(item)
 
 
-    # Then remaining relevant matches.
     for item in relevant:
         add_unique(item)
 
@@ -1490,6 +1650,126 @@ async def build_search_embed(
         embed.set_footer(
             text="Data provided by TMDb"
         )
+
+
+    return embed
+
+
+async def build_countdown_embed(
+    item: dict
+) -> discord.Embed:
+
+    media_type = item.get(
+        "_media_type"
+    )
+
+    tmdb_id = item.get("id")
+
+    details = await get_details(
+        media_type,
+        tmdb_id
+    )
+
+
+    if media_type == "movie":
+
+        title = (
+            details.get("title")
+            or item.get("title")
+            or "Untitled"
+        )
+
+        date_string = (
+            await get_us_movie_release_date(
+                tmdb_id
+            )
+        )
+
+        if not date_string:
+            date_string = (
+                details.get("release_date")
+                or item.get("release_date")
+            )
+
+        media_label = "MOVIE"
+
+
+    else:
+
+        title = (
+            details.get("name")
+            or item.get("name")
+            or "Untitled"
+        )
+
+        date_string = (
+            details.get("first_air_date")
+            or item.get("first_air_date")
+        )
+
+        media_label = "TV"
+
+
+    page_url = (
+        f"{TMDB_WEB_URL}/"
+        f"{media_type}/"
+        f"{tmdb_id}"
+    )
+
+
+    if date_string:
+
+        description = (
+            f"📅 **{format_release_date(date_string)}**\n"
+            f"⏳ **{format_exact_countdown(date_string)}**"
+        )
+
+    else:
+
+        description = (
+            "📅 **Release date unavailable**"
+        )
+
+
+    embed = discord.Embed(
+        title=title,
+        url=page_url,
+        description=description,
+        color=discord.Color.from_rgb(
+            40,
+            105,
+            150
+        )
+    )
+
+
+    embed.set_author(
+        name=(
+            f"PREMIEREBOT  •  "
+            f"{media_label} COUNTDOWN"
+        )
+    )
+
+
+    poster_path = (
+        details.get("poster_path")
+        or item.get("poster_path")
+    )
+
+
+    if poster_path:
+
+        embed.set_thumbnail(
+            url=(
+                f"{TMDB_THUMBNAIL_URL}"
+                f"{poster_path}"
+            )
+        )
+
+
+    embed.set_footer(
+        text="Data provided by TMDb"
+    )
 
 
     return embed
@@ -1982,6 +2262,105 @@ async def search(
     await interaction.followup.send(
         embed=embed,
         view=view
+    )
+
+
+@client.tree.command(
+    name="countdown",
+    description="See how long until a movie or TV show releases."
+)
+@app_commands.describe(
+    title="Movie or TV title.",
+    media_type="Optionally limit the search to movies or TV."
+)
+@app_commands.rename(
+    media_type="type"
+)
+@app_commands.choices(
+
+    media_type=[
+        app_commands.Choice(
+            name="Movie",
+            value="movie"
+        ),
+
+        app_commands.Choice(
+            name="TV",
+            value="tv"
+        ),
+    ]
+)
+async def countdown(
+    interaction: discord.Interaction,
+    title: str,
+    media_type: app_commands.Choice[str] | None = None
+):
+
+    await interaction.response.defer()
+
+    selected_type = (
+        media_type.value
+        if media_type
+        else None
+    )
+
+    try:
+
+        results = await search_titles(
+            title,
+            selected_type
+        )
+
+    except Exception as error:
+
+        print(
+            f"Countdown search error: {error}"
+        )
+
+        await interaction.followup.send(
+            "PremiereBot couldn't search "
+            "for that title right now."
+        )
+
+        return
+
+
+    if not results:
+
+        await interaction.followup.send(
+            f"No relevant result found "
+            f"for **{title}**."
+        )
+
+        return
+
+
+    # Use the strongest search result.
+    result = results[0]
+
+
+    try:
+
+        embed = await build_countdown_embed(
+            result
+        )
+
+    except Exception as error:
+
+        print(
+            f"Countdown detail error: {error}"
+        )
+
+        await interaction.followup.send(
+            "PremiereBot found that title, "
+            "but couldn't load its release date."
+        )
+
+        return
+
+
+    await interaction.followup.send(
+        embed=embed
     )
 
 
