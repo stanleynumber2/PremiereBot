@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 4.2")
+print("PremiereBot code version: 4.4")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -137,10 +137,7 @@ def format_runtime(
     runtime = None
 
     if media_type == "movie":
-
-        runtime = details.get(
-            "runtime"
-        )
+        runtime = details.get("runtime")
 
     else:
 
@@ -397,18 +394,12 @@ def format_countdown(
     parts = []
 
     if days:
-        parts.append(
-            f"{days}d"
-        )
+        parts.append(f"{days}d")
 
     if hours or days:
-        parts.append(
-            f"{hours}h"
-        )
+        parts.append(f"{hours}h")
 
-    parts.append(
-        f"{minutes}m"
-    )
+    parts.append(f"{minutes}m")
 
     return " ".join(parts)
 
@@ -543,6 +534,58 @@ def search_relevance(
         -vote_count,
         -popularity
     )
+
+
+async def get_movie_collection_parts(
+    movie_item: dict
+) -> list[dict]:
+
+    tmdb_id = movie_item.get("id")
+
+    if not tmdb_id:
+        return []
+
+    details = await fetch_tmdb(
+        f"movie/{tmdb_id}"
+    )
+
+    collection = details.get(
+        "belongs_to_collection"
+    )
+
+    if not collection:
+        return []
+
+    collection_id = collection.get(
+        "id"
+    )
+
+    if not collection_id:
+        return []
+
+    data = await fetch_tmdb(
+        f"collection/{collection_id}"
+    )
+
+    parts = []
+
+    for item in data.get(
+        "parts",
+        []
+    ):
+
+        item["_media_type"] = "movie"
+        item["_from_collection"] = True
+
+        parts.append(item)
+
+    parts.sort(
+        key=lambda item:
+            item.get("release_date")
+            or "9999-12-31"
+    )
+
+    return parts
 
 
 async def verify_us_movie_release(
@@ -686,7 +729,6 @@ async def verify_us_tv_relevance(
         return None
 
     verified = dict(item)
-
     verified["_details"] = details
 
     return verified
@@ -1124,7 +1166,6 @@ async def search_titles(
 
     relevant = []
 
-
     for item in results:
 
         title = (
@@ -1146,7 +1187,6 @@ async def search_titles(
         original_norm = normalize_title(
             original_title
         )
-
 
         if (
             title_norm == query_norm
@@ -1173,7 +1213,89 @@ async def search_titles(
     )
 
 
-    return relevant[:10]
+    collection_results = []
+
+    # Only movies have TMDb collections.
+    # Use the strongest movie match as
+    # the collection/franchise anchor.
+    strongest_movie = next(
+        (
+            item
+            for item in relevant
+            if item.get(
+                "_media_type"
+            ) == "movie"
+        ),
+        None
+    )
+
+
+    if strongest_movie:
+
+        try:
+
+            collection_results = (
+                await get_movie_collection_parts(
+                    strongest_movie
+                )
+            )
+
+        except Exception as error:
+
+            print(
+                f"Collection lookup error: {error}"
+            )
+
+
+    final_results = []
+    seen = set()
+
+
+    def add_unique(
+        item: dict
+    ):
+
+        media = item.get(
+            "_media_type"
+        )
+
+        item_id = item.get("id")
+
+        key = (
+            media,
+            item_id
+        )
+
+        if (
+            item_id is not None
+            and key not in seen
+        ):
+
+            seen.add(key)
+
+            final_results.append(
+                item
+            )
+
+
+    # Strongest direct match first.
+    if relevant:
+        add_unique(
+            relevant[0]
+        )
+
+
+    # Then franchise/collection members.
+    for item in collection_results:
+        add_unique(item)
+
+
+    # Then remaining relevant matches.
+    for item in relevant:
+        add_unique(item)
+
+
+    return final_results[:15]
 
 
 async def build_search_embed(
@@ -1261,12 +1383,13 @@ async def build_search_embed(
         )
     )
 
+
     overview = (
         details.get("overview")
         or item.get("overview")
-        or
-        "No synopsis is currently available."
+        or "No synopsis is currently available."
     ).strip()
+
 
     if len(overview) > 650:
 
@@ -1275,11 +1398,13 @@ async def build_search_embed(
             + "..."
         )
 
+
     rating = float(
         details.get("vote_average")
         or item.get("vote_average")
         or 0
     )
+
 
     vote_count = int(
         details.get("vote_count")
@@ -1287,11 +1412,13 @@ async def build_search_embed(
         or 0
     )
 
+
     metadata_lines = [
         f"🏷️ *{genre_text}*",
         f"🎭 **{cast_text}**",
         f"🕒 **{runtime_text}**",
     ]
+
 
     if availability:
 
@@ -1299,9 +1426,11 @@ async def build_search_embed(
             f"📺 **{availability}**"
         )
 
+
     metadata = "\n".join(
         metadata_lines
     )
+
 
     description = (
         f"{metadata}\n\n"
@@ -1309,6 +1438,7 @@ async def build_search_embed(
         f"📅 **{format_release_date(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
+
 
     embed = discord.Embed(
         title=display_title,
@@ -1321,6 +1451,7 @@ async def build_search_embed(
         )
     )
 
+
     embed.set_author(
         name=(
             f"PREMIEREBOT  •  "
@@ -1328,10 +1459,12 @@ async def build_search_embed(
         )
     )
 
+
     poster_path = (
         details.get("poster_path")
         or item.get("poster_path")
     )
+
 
     if poster_path:
 
@@ -1341,6 +1474,7 @@ async def build_search_embed(
                 f"{poster_path}"
             )
         )
+
 
     if availability:
 
@@ -1356,6 +1490,7 @@ async def build_search_embed(
         embed.set_footer(
             text="Data provided by TMDb"
         )
+
 
     return embed
 
@@ -1391,13 +1526,16 @@ class ReleaseBrowser(
         self
     ):
 
+        has_multiple_pages = (
+            self.total_pages > 1
+        )
+
         self.previous_button.disabled = (
-            self.page <= 0
+            not has_multiple_pages
         )
 
         self.next_button.disabled = (
-            self.page
-            >= self.total_pages - 1
+            not has_multiple_pages
         )
 
         self.page_button.label = (
@@ -1452,8 +1590,9 @@ class ReleaseBrowser(
         button: discord.ui.Button
     ):
 
-        if self.page > 0:
-            self.page -= 1
+        self.page = (
+            self.page - 1
+        ) % self.total_pages
 
         self.update_buttons()
 
@@ -1489,11 +1628,9 @@ class ReleaseBrowser(
         button: discord.ui.Button
     ):
 
-        if (
-            self.page
-            < self.total_pages - 1
-        ):
-            self.page += 1
+        self.page = (
+            self.page + 1
+        ) % self.total_pages
 
         self.update_buttons()
 
@@ -1534,13 +1671,16 @@ class SearchBrowser(
         self
     ):
 
+        has_multiple_pages = (
+            self.total_pages > 1
+        )
+
         self.previous_button.disabled = (
-            self.page <= 0
+            not has_multiple_pages
         )
 
         self.next_button.disabled = (
-            self.page
-            >= self.total_pages - 1
+            not has_multiple_pages
         )
 
         self.page_button.label = (
@@ -1594,8 +1734,9 @@ class SearchBrowser(
         button: discord.ui.Button
     ):
 
-        if self.page > 0:
-            self.page -= 1
+        self.page = (
+            self.page - 1
+        ) % self.total_pages
 
         self.update_buttons()
 
@@ -1631,11 +1772,9 @@ class SearchBrowser(
         button: discord.ui.Button
     ):
 
-        if (
-            self.page
-            < self.total_pages - 1
-        ):
-            self.page += 1
+        self.page = (
+            self.page + 1
+        ) % self.total_pages
 
         self.update_buttons()
 
