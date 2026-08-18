@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 5.1")
+print("PremiereBot code version: 5.2")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -1455,8 +1455,6 @@ async def search_titles(
         add_unique(item)
 
 
-    # Search browser is intentionally
-    # capped at 10 results.
     return final_results[:10]
 
 
@@ -1666,10 +1664,6 @@ async def get_future_countdown_item(
     ).date()
 
 
-    # Results are already relevance-ranked.
-    # Walk through them until we find
-    # the strongest result that has not
-    # released/premiered yet.
     for item in results:
 
         media_type = item.get(
@@ -1686,24 +1680,67 @@ async def get_future_countdown_item(
 
         try:
 
+            details = await get_details(
+                media_type,
+                tmdb_id
+            )
+
+
             if media_type == "movie":
 
+                # This is the critical fix:
+                # first check the movie's
+                # ORIGINAL TMDb release date.
+                original_date_string = (
+                    details.get(
+                        "release_date"
+                    )
+                    or item.get(
+                        "release_date"
+                    )
+                )
+
+                if not original_date_string:
+                    continue
+
+
+                original_release_date = (
+                    datetime.strptime(
+                        original_date_string,
+                        "%Y-%m-%d"
+                    ).date()
+                )
+
+
+                # If the movie already
+                # originally released,
+                # reject it completely.
+                # Future re-releases do
+                # NOT count.
+                if (
+                    original_release_date
+                    < today
+                ):
+                    continue
+
+
+                # Now that we know the movie
+                # itself is genuinely unreleased,
+                # prefer its U.S. theatrical date.
                 date_string = (
                     await get_us_movie_release_date(
                         tmdb_id
                     )
                 )
 
+
                 if not date_string:
-                    continue
+                    date_string = (
+                        original_date_string
+                    )
 
 
             else:
-
-                details = await get_details(
-                    "tv",
-                    tmdb_id
-                )
 
                 date_string = (
                     details.get(
@@ -1718,7 +1755,21 @@ async def get_future_countdown_item(
                     continue
 
 
-            release_date = (
+                first_air_date = (
+                    datetime.strptime(
+                        date_string,
+                        "%Y-%m-%d"
+                    ).date()
+                )
+
+
+                # Existing TV shows do not
+                # qualify for /countdown.
+                if first_air_date < today:
+                    continue
+
+
+            countdown_date = (
                 datetime.strptime(
                     date_string,
                     "%Y-%m-%d"
@@ -1726,9 +1777,7 @@ async def get_future_countdown_item(
             )
 
 
-            # Countdown only accepts
-            # unreleased titles.
-            if release_date < today:
+            if countdown_date < today:
                 continue
 
 
@@ -2406,26 +2455,11 @@ async def countdown(
         return
 
 
-    try:
-
-        future_match = (
-            await get_future_countdown_item(
-                results
-            )
+    future_match = (
+        await get_future_countdown_item(
+            results
         )
-
-    except Exception as error:
-
-        print(
-            f"Countdown filter error: {error}"
-        )
-
-        await interaction.followup.send(
-            "PremiereBot couldn't determine "
-            "the upcoming release date."
-        )
-
-        return
+    )
 
 
     if not future_match:
