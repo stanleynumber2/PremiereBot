@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("ReleaseBot code version: 6.0")
+print("ReleaseBot code version: 6.1")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -68,6 +68,10 @@ class ReleaseClient(discord.Client):
 
 
 client = ReleaseClient()
+
+# Keep API verification bursts modest so /upcoming does not
+# fan out dozens of requests at once.
+UPCOMING_API_SEMAPHORE = asyncio.Semaphore(6)
 
 
 # =========================================================
@@ -294,7 +298,7 @@ def format_tmdb_genres(details: dict) -> str:
     ]
 
     return (
-        " â¢ ".join(genres[:3])
+        " | ".join(genres[:3])
         if genres
         else "Genre unavailable"
     )
@@ -315,7 +319,7 @@ def format_cast(details: dict) -> str:
             break
 
     return (
-        " â¢ ".join(names)
+        " | ".join(names)
         if names
         else "Cast unavailable"
     )
@@ -360,12 +364,12 @@ def format_tv_availability(details: dict) -> str | None:
         if name not in names:
             names.append(name)
 
-    return " â¢ ".join(names[:5]) if names else None
+    return " | ".join(names[:5]) if names else None
 
 
 def format_search_availability(details: dict) -> str | None:
     names = get_us_provider_names(details)
-    return " â¢ ".join(names[:6]) if names else None
+    return " | ".join(names[:6]) if names else None
 
 
 def tmdb_search_relevance(
@@ -676,9 +680,10 @@ async def verify_us_movie_release(
     if not tmdb_id:
         return None
 
-    data = await fetch_tmdb(
-        f"movie/{tmdb_id}/release_dates"
-    )
+    async with UPCOMING_API_SEMAPHORE:
+        data = await fetch_tmdb(
+            f"movie/{tmdb_id}/release_dates"
+        )
 
     us_entries = next(
         (
@@ -744,10 +749,11 @@ async def verify_us_tv_relevance(
     if not tmdb_id:
         return None
 
-    details = await get_tmdb_details(
-        "tv",
-        tmdb_id
-    )
+    async with UPCOMING_API_SEMAPHORE:
+        details = await get_tmdb_details(
+            "tv",
+            tmdb_id
+        )
 
     origin_countries = (
         details.get("origin_country")
@@ -846,6 +852,12 @@ async def get_upcoming_tmdb(
             item["_media_type"] = media_type
             item["_source"] = "tmdb"
             candidates.append(item)
+
+    # TMDb discover can return a lot of candidates. The old
+    # single-type command was light; combining movies + series
+    # can double the follow-up requests. Twenty per type is more
+    # than enough for this browser and keeps responses snappy.
+    candidates = candidates[:20]
 
     if media_type == "movie":
         checks = [
@@ -984,7 +996,7 @@ async def build_tmdb_search_embed(
 
     embed.set_author(
         name=(
-            f"RELEASEBOT  â¢  "
+            f"RELEASEBOT  |  "
             f"{media_label(media_type)}"
         )
     )
@@ -1101,7 +1113,7 @@ async def build_tmdb_upcoming_embed(
 
     embed.set_author(
         name=(
-            f"RELEASEBOT  â¢  "
+            f"RELEASEBOT  |  "
             f"{media_label(media_type)}"
         )
     )
@@ -1244,7 +1256,7 @@ async def build_tmdb_countdown_embed(
 
     embed.set_author(
         name=(
-            f"RELEASEBOT  â¢  "
+            f"RELEASEBOT  |  "
             f"{media_label(media_type)} COUNTDOWN"
         )
     )
@@ -1700,7 +1712,7 @@ def game_platforms_text(item: dict) -> str:
     if not names:
         return "Platforms unavailable"
 
-    return " â¢ ".join(names[:6])
+    return " | ".join(names[:6])
 
 
 def game_genres_text(item: dict) -> str:
@@ -1711,7 +1723,7 @@ def game_genres_text(item: dict) -> str:
     ]
 
     return (
-        " â¢ ".join(names[:3])
+        " | ".join(names[:3])
         if names
         else "Genre unavailable"
     )
@@ -1724,7 +1736,7 @@ def game_modes_text(item: dict) -> str | None:
         if mode.get("name")
     ]
 
-    return " â¢ ".join(names[:4]) if names else None
+    return " | ".join(names[:4]) if names else None
 
 
 def game_companies_text(item: dict) -> str | None:
@@ -1753,7 +1765,7 @@ def game_companies_text(item: dict) -> str | None:
         if len(names) >= 3:
             break
 
-    return " â¢ ".join(names) if names else None
+    return " | ".join(names) if names else None
 
 
 def get_game_release(
@@ -1923,7 +1935,7 @@ async def build_igdb_search_embed(
     )
 
     embed.set_author(
-        name="RELEASEBOT  â¢  GAME"
+        name="RELEASEBOT  |  GAME"
     )
 
     cover = item.get("cover") or {}
@@ -1991,7 +2003,7 @@ async def get_upcoming_igdb_games(
             f"fields {IGDB_GAME_FIELDS}; "
             f"where {' & '.join(where_parts)}; "
             f"sort first_release_date asc; "
-            f"limit 100;"
+            f"limit 30;"
         )
     )
 
@@ -2119,7 +2131,7 @@ async def build_igdb_upcoming_embed(
     )
 
     embed.set_author(
-        name="RELEASEBOT  â¢  GAME"
+        name="RELEASEBOT  |  GAME"
     )
 
     cover = item.get("cover") or {}
@@ -2224,7 +2236,7 @@ async def build_igdb_countdown_embed(
     )
 
     embed.set_author(
-        name="RELEASEBOT  â¢  GAME COUNTDOWN"
+        name="RELEASEBOT  |  GAME COUNTDOWN"
     )
 
     cover = item.get("cover") or {}
