@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -7,7 +8,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 4.0")
+print("PremiereBot code version: 4.1")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -440,6 +441,112 @@ def score_meter(
     return (
         f"⭐️ **{rating:.1f}/10**\n"
         f"`{bar}`"
+    )
+
+
+def normalize_title(
+    text: str
+) -> str:
+
+    text = text.lower().strip()
+
+    text = re.sub(
+        r"[^a-z0-9\s]",
+        "",
+        text
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip()
+
+
+def search_relevance(
+    item: dict,
+    query: str
+) -> tuple:
+
+    query_norm = normalize_title(
+        query
+    )
+
+    title = (
+        item.get("title")
+        or item.get("name")
+        or ""
+    )
+
+    original_title = (
+        item.get("original_title")
+        or item.get("original_name")
+        or ""
+    )
+
+    title_norm = normalize_title(
+        title
+    )
+
+    original_norm = normalize_title(
+        original_title
+    )
+
+    exact = (
+        title_norm == query_norm
+        or original_norm == query_norm
+    )
+
+    starts_with = (
+        title_norm.startswith(
+            query_norm
+        )
+        or original_norm.startswith(
+            query_norm
+        )
+    )
+
+    contains_phrase = (
+        query_norm in title_norm
+        or query_norm in original_norm
+    )
+
+    query_words = set(
+        query_norm.split()
+    )
+
+    title_words = set(
+        title_norm.split()
+    )
+
+    original_words = set(
+        original_norm.split()
+    )
+
+    word_overlap = max(
+        len(
+            query_words
+            & title_words
+        ),
+        len(
+            query_words
+            & original_words
+        )
+    )
+
+    popularity = float(
+        item.get("popularity")
+        or 0
+    )
+
+    return (
+        0 if exact else 1,
+        0 if starts_with else 1,
+        0 if contains_phrase else 1,
+        -word_overlap,
+        -popularity
     )
 
 
@@ -965,6 +1072,7 @@ async def search_titles(
 
     results = []
 
+
     if media_type == "movie":
 
         data = await fetch_tmdb(
@@ -979,7 +1087,6 @@ async def search_titles(
             "results",
             []
         ):
-
             item["_media_type"] = "movie"
             results.append(item)
 
@@ -998,7 +1105,6 @@ async def search_titles(
             "results",
             []
         ):
-
             item["_media_type"] = "tv"
             results.append(item)
 
@@ -1028,30 +1134,100 @@ async def search_titles(
             "results",
             []
         ):
-
             item["_media_type"] = "movie"
             results.append(item)
-
 
         for item in tv_data.get(
             "results",
             []
         ):
-
             item["_media_type"] = "tv"
             results.append(item)
 
 
-    results.sort(
-        key=lambda item: (
-            -float(
-                item.get("popularity")
-                or 0
-            )
-        )
+    query_norm = normalize_title(
+        name
     )
 
-    return results[:20]
+    strong_matches = []
+
+    weak_matches = []
+
+
+    for item in results:
+
+        title = (
+            item.get("title")
+            or item.get("name")
+            or ""
+        )
+
+        original_title = (
+            item.get("original_title")
+            or item.get("original_name")
+            or ""
+        )
+
+        title_norm = normalize_title(
+            title
+        )
+
+        original_norm = normalize_title(
+            original_title
+        )
+
+        if (
+            query_norm in title_norm
+            or query_norm in original_norm
+            or title_norm in query_norm
+            or original_norm in query_norm
+        ):
+            strong_matches.append(
+                item
+            )
+
+        else:
+            weak_matches.append(
+                item
+            )
+
+
+    strong_matches.sort(
+        key=lambda item:
+            search_relevance(
+                item,
+                name
+            )
+    )
+
+    weak_matches.sort(
+        key=lambda item:
+            search_relevance(
+                item,
+                name
+            )
+    )
+
+
+    # Prefer genuinely related titles.
+    # Only use weaker results if we
+    # don't have enough good ones.
+    refined = strong_matches[:10]
+
+    if len(refined) < 5:
+
+        remaining_slots = (
+            10 - len(refined)
+        )
+
+        refined.extend(
+            weak_matches[
+                :remaining_slots
+            ]
+        )
+
+
+    return refined[:10]
 
 
 async def build_search_embed(
@@ -1099,6 +1275,19 @@ async def build_search_embed(
         )
 
         media_label = "TV"
+
+
+    year = ""
+
+    if date_string:
+        year = date_string[:4]
+
+
+    display_title = (
+        f"{title} ({year})"
+        if year
+        else title
+    )
 
 
     page_url = (
@@ -1186,7 +1375,7 @@ async def build_search_embed(
 
 
     embed = discord.Embed(
-        title=title,
+        title=display_title,
         url=page_url,
         description=description,
         color=discord.Color.from_rgb(
@@ -1573,7 +1762,6 @@ async def upcoming(
 
     await interaction.response.defer()
 
-
     try:
 
         results = await get_upcoming(
@@ -1594,7 +1782,6 @@ async def upcoming(
 
         return
 
-
     if not results:
 
         await interaction.followup.send(
@@ -1604,13 +1791,11 @@ async def upcoming(
 
         return
 
-
     view = ReleaseBrowser(
         results=results,
         media_type=media_type.value,
         requester_id=interaction.user.id
     )
-
 
     try:
 
@@ -1628,7 +1813,6 @@ async def upcoming(
         )
 
         return
-
 
     await interaction.followup.send(
         embed=embed,
@@ -1668,13 +1852,11 @@ async def search(
 
     await interaction.response.defer()
 
-
     selected_type = (
         media_type.value
         if media_type
         else None
     )
-
 
     try:
 
@@ -1696,7 +1878,6 @@ async def search(
 
         return
 
-
     if not results:
 
         await interaction.followup.send(
@@ -1705,12 +1886,10 @@ async def search(
 
         return
 
-
     view = SearchBrowser(
         results=results,
         requester_id=interaction.user.id
     )
-
 
     try:
 
@@ -1728,7 +1907,6 @@ async def search(
         )
 
         return
-
 
     await interaction.followup.send(
         embed=embed,
