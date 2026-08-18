@@ -4,43 +4,76 @@ from datetime import datetime, timedelta, timezone
 import aiohttp
 import discord
 from discord import app_commands
-from discord.ext import commands
+
+
+print("PremiereBot code version: 1.0")
 
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
+DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID")
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_WEB_URL = "https://www.themoviedb.org"
 
 
-class PremiereBot(commands.Bot):
+if not DISCORD_TOKEN:
+    raise RuntimeError("DISCORD_TOKEN is missing.")
+
+if not TMDB_API_KEY:
+    raise RuntimeError("TMDB_API_KEY is missing.")
+
+if not DISCORD_GUILD_ID:
+    raise RuntimeError("DISCORD_GUILD_ID is missing.")
+
+
+TEST_GUILD = discord.Object(
+    id=int(DISCORD_GUILD_ID)
+)
+
+
+class PremiereClient(discord.Client):
+
+    def __init__(self):
+        intents = discord.Intents.default()
+
+        super().__init__(
+            intents=intents
+        )
+
+        self.tree = app_commands.CommandTree(self)
+
     async def setup_hook(self):
-        synced = await self.tree.sync()
+
+        print("PremiereBot setup_hook started.")
+
+        # Copy our commands into the Wodies server
+        # so they appear immediately while testing.
+        self.tree.copy_global_to(
+            guild=TEST_GUILD
+        )
+
+        synced = await self.tree.sync(
+            guild=TEST_GUILD
+        )
 
         print(
-            f"Synced {len(synced)} command(s) with Discord."
+            f"Synced {len(synced)} guild command(s)."
         )
 
         for command in synced:
             print(
-                f"Synced command: /{command.name}"
+                f"Synced: /{command.name}"
             )
 
+    async def on_ready(self):
 
-intents = discord.Intents.default()
-
-bot = PremiereBot(
-    command_prefix="!",
-    intents=intents
-)
+        print(
+            f"PremiereBot online as {self.user}"
+        )
 
 
-@bot.event
-async def on_ready():
-    print(
-        f"PremiereBot is online as {bot.user}"
-    )
+client = PremiereClient()
 
 
 async def fetch_tmdb(
@@ -55,14 +88,21 @@ async def fetch_tmdb(
         "include_adult": "false",
     }
 
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(
+        total=15
+    )
+
+    async with aiohttp.ClientSession(
+        timeout=timeout
+    ) as session:
+
         async with session.get(
             f"{TMDB_BASE_URL}/{endpoint}",
-            params=params,
-            timeout=aiohttp.ClientTimeout(total=15),
+            params=params
         ) as response:
 
             if response.status != 200:
+
                 body = await response.text()
 
                 raise RuntimeError(
@@ -115,6 +155,7 @@ async def get_upcoming(
         today + timedelta(days=days)
     )
 
+
     if media_type == "movie":
 
         endpoint = "discover/movie"
@@ -123,6 +164,7 @@ async def get_upcoming(
         params = {
             "region": "US",
 
+            # TMDb:
             # 2 = Limited Theatrical
             # 3 = Theatrical
             "with_release_type": "2|3",
@@ -136,6 +178,7 @@ async def get_upcoming(
             "sort_by":
                 "release_date.asc",
         }
+
 
     else:
 
@@ -156,12 +199,14 @@ async def get_upcoming(
                 "false",
         }
 
+
     data = await fetch_tmdb(
         endpoint,
         params
     )
 
     results = []
+
 
     for item in data.get(
         "results",
@@ -175,7 +220,9 @@ async def get_upcoming(
         if not date_string:
             continue
 
+
         try:
+
             item_date = datetime.strptime(
                 date_string,
                 "%Y-%m-%d"
@@ -184,6 +231,9 @@ async def get_upcoming(
         except ValueError:
             continue
 
+
+        # Prevent old or bad TMDb dates
+        # from slipping into our results.
         if (
             today
             <= item_date
@@ -191,10 +241,11 @@ async def get_upcoming(
         ):
             results.append(item)
 
+
     return results
 
 
-@bot.tree.command(
+@client.tree.command(
     name="upcoming",
     description="See upcoming movie or TV releases."
 )
@@ -217,6 +268,7 @@ async def get_upcoming(
             value="tv"
         ),
     ],
+
     timeframe=[
         app_commands.Choice(
             name="Week",
@@ -231,13 +283,15 @@ async def get_upcoming(
 async def upcoming(
     interaction: discord.Interaction,
     media_type: app_commands.Choice[str],
-    timeframe: app_commands.Choice[str],
+    timeframe: app_commands.Choice[str]
 ):
 
     await interaction.response.defer()
 
+
     media_value = media_type.value
     time_value = timeframe.value
+
 
     media_label = (
         "Movies"
@@ -245,6 +299,153 @@ async def upcoming(
         else "TV Series"
     )
 
+
     time_label = (
         "Next 7 Days"
-        if time_value ==
+        if time_value == "week"
+        else "Next 30 Days"
+    )
+
+
+    try:
+
+        results = await get_upcoming(
+            media_value,
+            time_value
+        )
+
+    except Exception as error:
+
+        print(
+            f"TMDb error: {error}"
+        )
+
+        await interaction.followup.send(
+            "PremiereBot couldn't retrieve "
+            "release information from TMDb "
+            "right now."
+        )
+
+        return
+
+
+    if not results:
+
+        await interaction.followup.send(
+            f"No upcoming "
+            f"{media_label.lower()} "
+            f"were found for the "
+            f"{time_label.lower()}."
+        )
+
+        return
+
+
+    embed = discord.Embed(
+        title=f"🎬 Upcoming {media_label}",
+        description=f"**{time_label}**"
+    )
+
+
+    for item in results[:10]:
+
+        title = (
+            item.get("title")
+            or item.get("name")
+            or "Untitled"
+        )
+
+
+        if media_value == "movie":
+
+            date_string = item.get(
+                "release_date"
+            )
+
+            media_path = "movie"
+
+        else:
+
+            date_string = item.get(
+                "first_air_date"
+            )
+
+            media_path = "tv"
+
+
+        tmdb_id = item.get("id")
+
+
+        if tmdb_id:
+
+            title_display = (
+                f"[{title}]"
+                f"({TMDB_WEB_URL}/"
+                f"{media_path}/"
+                f"{tmdb_id})"
+            )
+
+        else:
+
+            title_display = title
+
+
+        overview = (
+            item.get("overview")
+            or ""
+        ).strip()
+
+
+        if len(overview) > 150:
+
+            overview = (
+                overview[:147].rstrip()
+                + "..."
+            )
+
+
+        value = make_discord_date(
+            date_string
+        )
+
+
+        if overview:
+
+            value += (
+                f"\n{overview}"
+            )
+
+
+        embed.add_field(
+            name=title_display,
+            value=value,
+            inline=False
+        )
+
+
+    if len(results) > 10:
+
+        footer_text = (
+            f"Showing 10 of "
+            f"{len(results)} results "
+            f"• Data provided by TMDb"
+        )
+
+    else:
+
+        footer_text = (
+            "Data provided by TMDb"
+        )
+
+
+    embed.set_footer(
+        text=footer_text
+    )
+
+
+    await interaction.followup.send(
+        embed=embed
+    )
+
+
+client.run(DISCORD_TOKEN)
