@@ -15,26 +15,7 @@ TMDB_WEB_URL = "https://www.themoviedb.org"
 
 intents = discord.Intents.default()
 
-
-class PremiereBot(commands.Bot):
-    async def setup_hook(self):
-        try:
-            synced = await self.tree.sync()
-            print(
-                f"Synced {len(synced)} command(s) with Discord."
-            )
-
-            for command in synced:
-                print(f"Synced command: /{command.name}")
-
-        except Exception as error:
-            print(
-                f"ERROR syncing Discord commands: {error}"
-            )
-            raise
-
-
-bot = PremiereBot(
+bot = commands.Bot(
     command_prefix="!",
     intents=intents
 )
@@ -42,9 +23,29 @@ bot = PremiereBot(
 
 @bot.event
 async def on_ready():
-    print(
-        f"PremiereBot is online as {bot.user}"
-    )
+    print(f"PremiereBot is online as {bot.user}")
+
+
+@bot.event
+async def setup_hook():
+    try:
+        synced = await bot.tree.sync()
+
+        print(
+            f"Synced {len(synced)} command(s) with Discord."
+        )
+
+        for command in synced:
+            print(
+                f"Synced command: /{command.name}"
+            )
+
+    except Exception as error:
+        print(
+            f"ERROR syncing Discord commands: {error}"
+        )
+
+        raise
 
 
 async def fetch_tmdb(
@@ -127,7 +128,6 @@ async def get_upcoming(
         params = {
             "region": "US",
 
-            # TMDb release types:
             # 2 = Limited Theatrical
             # 3 = Theatrical
             "with_release_type": "2|3",
@@ -189,8 +189,6 @@ async def get_upcoming(
         except ValueError:
             continue
 
-        # Safety check:
-        # Never allow old releases.
         if (
             today
             <= item_date
@@ -201,20 +199,13 @@ async def get_upcoming(
     return results
 
 
-@app_commands.command(
+@bot.tree.command(
     name="upcoming",
-    description=(
-        "See upcoming movie "
-        "or TV releases."
-    )
+    description="See upcoming movie or TV releases."
 )
 @app_commands.describe(
-    media_type=(
-        "Choose movies or TV."
-    ),
-    timeframe=(
-        "Choose week or month."
-    )
+    media_type="Choose movies or TV.",
+    timeframe="Choose week or month."
 )
 @app_commands.rename(
     media_type="type",
@@ -245,10 +236,8 @@ async def get_upcoming(
 )
 async def upcoming(
     interaction: discord.Interaction,
-    media_type:
-        app_commands.Choice[str],
-    timeframe:
-        app_commands.Choice[str],
+    media_type: app_commands.Choice[str],
+    timeframe: app_commands.Choice[str],
 ):
 
     await interaction.response.defer()
@@ -300,13 +289,8 @@ async def upcoming(
         return
 
     embed = discord.Embed(
-        title=(
-            f"🎬 Upcoming "
-            f"{media_label}"
-        ),
-        description=(
-            f"**{time_label}**"
-        )
+        title=f"🎬 Upcoming {media_label}",
+        description=f"**{time_label}**"
     )
 
     for item in results[:10]:
