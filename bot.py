@@ -9,11 +9,12 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 6.2.4")
+print("Release Tracker code version: 1.6.3")
 
-# 6.2.4 is based on the known-good 6.1 command/data logic.
-# The only intended feature change is local platform autocomplete.
-# Autocomplete never contacts IGDB; IGDB is only contacted when a command runs.
+# 1.6.3 is based on the known-good 6.2.4 command/data logic.
+# Branding updated to Release Tracker.
+# Adds programmatic guild-profile banner upload from RTbanner.png.
+# Existing search/upcoming/countdown/autocomplete logic is otherwise unchanged.
 
 
 # =========================================================
@@ -62,14 +63,14 @@ GUILD = discord.Object(id=int(DISCORD_GUILD_ID))
 # DISCORD CLIENT
 # =========================================================
 
-class PremiereClient(discord.Client):
+class ReleaseTrackerClient(discord.Client):
 
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        print("PremiereBot setup started.")
+        print("Release Tracker setup started.")
 
         self.tree.copy_global_to(guild=GUILD)
 
@@ -81,10 +82,76 @@ class PremiereClient(discord.Client):
             print(f"Synced: /{command.name}")
 
     async def on_ready(self):
-        print(f"PremiereBot online as {self.user}")
+        print(f"Release Tracker online as {self.user}")
+        await self.update_profile_banner()
+
+    async def update_profile_banner(self):
+        """Upload RTbanner.png as this bot's server-profile banner."""
+        if getattr(self, "_banner_update_attempted", False):
+            return
+
+        self._banner_update_attempted = True
+        banner_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "RTbanner.png",
+        )
+
+        if not os.path.isfile(banner_path):
+            print(
+                "Release Tracker banner skipped: "
+                f"{banner_path} was not found."
+            )
+            return
+
+        try:
+            with open(banner_path, "rb") as banner_file:
+                banner_bytes = banner_file.read()
+
+            if len(banner_bytes) >= 10 * 1024 * 1024:
+                print(
+                    "Release Tracker banner skipped: "
+                    "RTbanner.png must be under 10 MB."
+                )
+                return
+
+            import base64
+            banner_data = (
+                "data:image/png;base64,"
+                + base64.b64encode(banner_bytes).decode("ascii")
+            )
+
+            url = (
+                "https://discord.com/api/v10/guilds/"
+                f"{DISCORD_GUILD_ID}/members/@me"
+            )
+            headers = {
+                "Authorization": f"Bot {DISCORD_TOKEN}",
+                "Content-Type": "application/json",
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.patch(
+                    url,
+                    headers=headers,
+                    json={"banner": banner_data},
+                ) as response:
+                    if response.status == 200:
+                        print(
+                            "Release Tracker banner uploaded "
+                            "successfully from RTbanner.png."
+                        )
+                    else:
+                        error_text = await response.text()
+                        print(
+                            "Release Tracker banner upload failed "
+                            f"({response.status}): {error_text}"
+                        )
+
+        except Exception as error:
+            print(f"Release Tracker banner upload error: {error}")
 
 
-client = PremiereClient()
+client = ReleaseTrackerClient()
 
 
 # =========================================================
@@ -3354,7 +3421,7 @@ class ReleaseBrowser(
 
             await interaction.response.send_message(
                 "Run `/upcoming` to open "
-                "your own PremiereBot browser.",
+                "your own Release Tracker browser.",
                 ephemeral=True
             )
 
@@ -3495,7 +3562,7 @@ class SearchBrowser(
 
             await interaction.response.send_message(
                 "Run `/search` to open "
-                "your own PremiereBot search.",
+                "your own Release Tracker search.",
                 ephemeral=True
             )
 
@@ -3641,7 +3708,7 @@ class GameReleaseBrowser(
 
             await interaction.response.send_message(
                 "Run `/upcoming` to open "
-                "your own PremiereBot browser.",
+                "your own Release Tracker browser.",
                 ephemeral=True
             )
 
@@ -3784,7 +3851,7 @@ class GameSearchBrowser(
 
             await interaction.response.send_message(
                 "Run `/search` to open "
-                "your own PremiereBot search.",
+                "your own Release Tracker search.",
                 ephemeral=True
             )
 
@@ -3944,7 +4011,7 @@ async def upcoming(
             )
 
             await interaction.followup.send(
-                "PremiereBot couldn't retrieve "
+                "Release Tracker couldn't retrieve "
                 "game release information right now."
             )
 
@@ -3988,7 +4055,7 @@ async def upcoming(
             )
 
             await interaction.followup.send(
-                "PremiereBot found game releases, "
+                "Release Tracker found game releases, "
                 "but couldn't load their details."
             )
 
@@ -4015,7 +4082,7 @@ async def upcoming(
         )
 
         await interaction.followup.send(
-            "PremiereBot couldn't retrieve "
+            "Release Tracker couldn't retrieve "
             "release information right now."
         )
 
@@ -4047,7 +4114,7 @@ async def upcoming(
         )
 
         await interaction.followup.send(
-            "PremiereBot found releases, "
+            "Release Tracker found releases, "
             "but couldn't load their details."
         )
 
@@ -4125,7 +4192,7 @@ async def search(
             )
 
             await interaction.followup.send(
-                "PremiereBot couldn't complete "
+                "Release Tracker couldn't complete "
                 "that game search right now."
             )
 
@@ -4164,7 +4231,7 @@ async def search(
             )
 
             await interaction.followup.send(
-                "PremiereBot found a game, "
+                "Release Tracker found a game, "
                 "but couldn't load its details."
             )
 
@@ -4191,7 +4258,7 @@ async def search(
         )
 
         await interaction.followup.send(
-            "PremiereBot couldn't complete "
+            "Release Tracker couldn't complete "
             "that search right now."
         )
 
@@ -4222,7 +4289,7 @@ async def search(
         )
 
         await interaction.followup.send(
-            "PremiereBot found a result, "
+            "Release Tracker found a result, "
             "but couldn't load its details."
         )
 
@@ -4300,7 +4367,7 @@ async def countdown(
             )
 
             await interaction.followup.send(
-                "PremiereBot couldn't search "
+                "Release Tracker couldn't search "
                 "for that game right now."
             )
 
@@ -4359,7 +4426,7 @@ async def countdown(
             )
 
             await interaction.followup.send(
-                "PremiereBot found the game, "
+                "Release Tracker found the game, "
                 "but couldn't load its countdown."
             )
 
@@ -4385,7 +4452,7 @@ async def countdown(
         )
 
         await interaction.followup.send(
-            "PremiereBot couldn't search "
+            "Release Tracker couldn't search "
             "for that title right now."
         )
 
@@ -4433,7 +4500,7 @@ async def countdown(
         )
 
         await interaction.followup.send(
-            "PremiereBot found an upcoming title, "
+            "Release Tracker found an upcoming title, "
             "but couldn't load its countdown."
         )
 
