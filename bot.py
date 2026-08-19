@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 6.2")
+print("PremiereBot code version: 6.2.2")
 
 
 # =========================================================
@@ -153,9 +153,6 @@ async def get_details(
 _igdb_access_token = None
 _igdb_token_expires_at = 0
 
-_igdb_platform_cache = []
-_igdb_platform_cache_expires_at = 0
-_igdb_platform_lock = asyncio.Lock()
 
 
 async def get_igdb_access_token(
@@ -282,78 +279,76 @@ async def fetch_igdb(
 
 
 # =========================================================
-# IGDB PLATFORM AUTOCOMPLETE
+# LOCAL PLATFORM AUTOCOMPLETE
 # =========================================================
 
-async def get_igdb_platform_catalog() -> list[dict]:
-    """
-    Pull the platform catalog directly from IGDB and cache it in memory.
-    Discord only shows up to 25 autocomplete suggestions at once, but the
-    entire IGDB platform catalog remains searchable as the user types.
-    """
+# Friendly labels mapped to the exact platform names used by IGDB.
+# This list is local on purpose: autocomplete never makes an API call.
+PLATFORM_AUTOCOMPLETE = [
+    ("PC", "PC (Microsoft Windows)"),
 
-    global _igdb_platform_cache
-    global _igdb_platform_cache_expires_at
+    ("PlayStation", "PlayStation"),
+    ("PlayStation 2", "PlayStation 2"),
+    ("PlayStation 3", "PlayStation 3"),
+    ("PlayStation 4", "PlayStation 4"),
+    ("PlayStation 5", "PlayStation 5"),
+    ("PSP", "PlayStation Portable"),
+    ("PlayStation Vita", "PlayStation Vita"),
 
-    now = time.time()
+    ("Xbox", "Xbox"),
+    ("Xbox 360", "Xbox 360"),
+    ("Xbox One", "Xbox One"),
+    ("Xbox Series X|S", "Xbox Series X|S"),
 
-    if (
-        _igdb_platform_cache
-        and now < _igdb_platform_cache_expires_at
-    ):
-        return _igdb_platform_cache
+    ("NES", "Nintendo Entertainment System"),
+    ("SNES", "Super Nintendo Entertainment System"),
+    ("Nintendo 64", "Nintendo 64"),
+    ("GameCube", "Nintendo GameCube"),
+    ("Wii", "Wii"),
+    ("Wii U", "Wii U"),
+    ("Nintendo Switch", "Nintendo Switch"),
+    ("Nintendo Switch 2", "Nintendo Switch 2"),
+    ("Game Boy", "Game Boy"),
+    ("Game Boy Color", "Game Boy Color"),
+    ("Game Boy Advance", "Game Boy Advance"),
+    ("Nintendo DS", "Nintendo DS"),
+    ("Nintendo 3DS", "Nintendo 3DS"),
 
-    async with _igdb_platform_lock:
+    ("Sega Master System", "Sega Master System/Mark III"),
+    ("Genesis / Mega Drive", "Sega Mega Drive/Genesis"),
+    ("Sega CD", "Sega CD"),
+    ("Sega 32X", "Sega 32X"),
+    ("Sega Saturn", "Sega Saturn"),
+    ("Dreamcast", "Dreamcast"),
+    ("Game Gear", "Game Gear"),
 
-        now = time.time()
+    ("Atari 2600", "Atari 2600"),
+    ("Atari 5200", "Atari 5200"),
+    ("Atari 7800", "Atari 7800"),
+    ("Atari Lynx", "Atari Lynx"),
+    ("Atari Jaguar", "Atari Jaguar"),
 
-        if (
-            _igdb_platform_cache
-            and now < _igdb_platform_cache_expires_at
-        ):
-            return _igdb_platform_cache
-
-        platforms = await fetch_igdb(
-            "platforms",
-            (
-                "fields id,name,abbreviation,alternative_name;"
-                "sort name asc;"
-                "limit 500;"
-            )
-        )
-
-        platforms = [
-            platform
-            for platform in platforms
-            if platform.get("name")
-        ]
-
-        platforms.sort(
-            key=lambda platform:
-                platform.get("name", "").lower()
-        )
-
-        _igdb_platform_cache = platforms
-
-        # IGDB's platform catalog does not need to be re-fetched often.
-        _igdb_platform_cache_expires_at = (
-            time.time() + 21600
-        )
-
-        return _igdb_platform_cache
+    ("Neo Geo AES", "Neo Geo AES"),
+    ("Neo Geo CD", "Neo Geo CD"),
+    ("Neo Geo Pocket", "Neo Geo Pocket"),
+    ("Neo Geo Pocket Color", "Neo Geo Pocket Color"),
+    ("TurboGrafx-16 / PC Engine", "TurboGrafx-16/PC Engine"),
+    ("PC Engine CD", "PC Engine CD"),
+    ("3DO", "3DO Interactive Multiplayer"),
+    ("WonderSwan", "WonderSwan"),
+    ("WonderSwan Color", "WonderSwan Color"),
+]
 
 
-def platform_search_text(
-    platform: dict
+def normalize_platform_search(
+    text: str
 ) -> str:
 
-    parts = [
-        platform.get("name") or "",
-        platform.get("abbreviation") or "",
-        platform.get("alternative_name") or "",
-    ]
-
-    return " ".join(parts).lower()
+    return re.sub(
+        r"[^a-z0-9]+",
+        " ",
+        text.lower()
+    ).strip()
 
 
 async def platform_autocomplete(
@@ -361,173 +356,113 @@ async def platform_autocomplete(
     current: str
 ) -> list[app_commands.Choice[str]]:
 
-    try:
-        platforms = await get_igdb_platform_catalog()
+    query = normalize_platform_search(
+        current
+    )
 
-    except Exception as error:
-        print(
-            f"IGDB platform autocomplete error: {error}"
+    aliases = {
+        "ps1": "playstation",
+        "ps2": "playstation 2",
+        "ps3": "playstation 3",
+        "ps4": "playstation 4",
+        "ps5": "playstation 5",
+        "psp": "playstation portable",
+        "vita": "playstation vita",
+        "nes": "nintendo entertainment system",
+        "snes": "super nintendo entertainment system",
+        "n64": "nintendo 64",
+        "gc": "nintendo gamecube",
+        "gamecube": "nintendo gamecube",
+        "gb": "game boy",
+        "gbc": "game boy color",
+        "gba": "game boy advance",
+        "ds": "nintendo ds",
+        "3ds": "nintendo 3ds",
+        "switch": "nintendo switch",
+        "switch2": "nintendo switch 2",
+        "switch 2": "nintendo switch 2",
+        "xsx": "xbox series x s",
+        "series x": "xbox series x s",
+        "series s": "xbox series x s",
+        "genesis": "sega mega drive genesis",
+        "mega drive": "sega mega drive genesis",
+        "saturn": "sega saturn",
+        "dreamcast": "dreamcast",
+        "tg16": "turbografx 16 pc engine",
+        "pc engine": "turbografx 16 pc engine",
+    }
+
+    expanded = aliases.get(
+        query,
+        query
+    )
+
+    ranked = []
+
+    for display_name, igdb_name in PLATFORM_AUTOCOMPLETE:
+
+        display_norm = normalize_platform_search(
+            display_name
         )
 
-        return []
-
-    current_text = current.strip().lower()
-
-    if current_text:
-
-        matches = [
-            platform
-            for platform in platforms
-            if current_text in platform_search_text(
-                platform
-            )
-        ]
-
-        # Exact abbreviation/name matches first, then starts-with,
-        # then normal contains matches.
-        def match_rank(platform: dict):
-            name = (
-                platform.get("name")
-                or ""
-            ).lower()
-
-            abbreviation = (
-                platform.get("abbreviation")
-                or ""
-            ).lower()
-
-            alternative = (
-                platform.get("alternative_name")
-                or ""
-            ).lower()
-
-            if current_text in (
-                name,
-                abbreviation,
-                alternative
-            ):
-                rank = 0
-
-            elif (
-                name.startswith(current_text)
-                or abbreviation.startswith(current_text)
-                or alternative.startswith(current_text)
-            ):
-                rank = 1
-
-            else:
-                rank = 2
-
-            return (
-                rank,
-                name
-            )
-
-        matches.sort(
-            key=match_rank
+        value_norm = normalize_platform_search(
+            igdb_name
         )
 
-    else:
-        # When the field is first opened, lead with recognizable
-        # console/PC platforms. These are still matched against the
-        # live IGDB catalog; the values are not hard-coded platform IDs.
-        featured_names = [
-            "PC (Microsoft Windows)",
-            "PlayStation 5",
-            "Xbox Series X|S",
-            "Nintendo Switch 2",
-            "Nintendo Switch",
-            "PlayStation 4",
-            "Xbox One",
-            "PlayStation 3",
-            "Xbox 360",
-            "Wii U",
-            "Nintendo 3DS",
-            "PlayStation Vita",
-            "Wii",
-            "PlayStation 2",
-            "Nintendo DS",
-            "PlayStation Portable",
-            "Xbox",
-            "Nintendo GameCube",
-            "Dreamcast",
-            "Nintendo 64",
-            "PlayStation",
-            "Super Nintendo Entertainment System",
-            "Nintendo Entertainment System",
-            "Game Boy Advance",
-            "Game Boy Color",
-        ]
+        searchable = (
+            f"{display_norm} {value_norm}"
+        )
 
-        by_name = {
-            (
-                platform.get("name")
-                or ""
-            ).lower():
-                platform
-            for platform in platforms
-        }
+        if not query:
+            rank = 3
 
-        matches = []
+        elif (
+            display_norm == query
+            or value_norm == query
+            or value_norm == expanded
+        ):
+            rank = 0
 
-        for name in featured_names:
+        elif (
+            display_norm.startswith(query)
+            or value_norm.startswith(query)
+            or value_norm.startswith(expanded)
+        ):
+            rank = 1
 
-            platform = by_name.get(
-                name.lower()
-            )
+        elif (
+            query in searchable
+            or expanded in searchable
+        ):
+            rank = 2
 
-            if (
-                platform
-                and platform not in matches
-            ):
-                matches.append(platform)
-
-        # Fill any missing slots alphabetically from IGDB.
-        for platform in platforms:
-
-            if platform not in matches:
-                matches.append(platform)
-
-            if len(matches) >= 25:
-                break
-
-    choices = []
-
-    for platform in matches[:25]:
-
-        name = platform.get("name")
-
-        if not name:
+        else:
             continue
 
-        abbreviation = (
-            platform.get("abbreviation")
-            or ""
-        ).strip()
-
-        display_name = name
-
-        if (
-            abbreviation
-            and abbreviation.lower()
-            not in name.lower()
-        ):
-            display_name = (
-                f"{name} ({abbreviation})"
-            )
-
-        # Discord choice labels and values have length limits.
-        display_name = display_name[:100]
-        value = name[:100]
-
-        choices.append(
-            app_commands.Choice(
-                name=display_name,
-                value=value
+        ranked.append(
+            (
+                rank,
+                display_name.lower(),
+                display_name,
+                igdb_name
             )
         )
 
-    return choices
+    ranked.sort(
+        key=lambda item: (
+            item[0],
+            item[1]
+        )
+    )
+
+    return [
+        app_commands.Choice(
+            name=display_name,
+            value=igdb_name
+        )
+        for _, _, display_name, igdb_name
+        in ranked[:25]
+    ]
 
 
 # =========================================================
@@ -1216,37 +1151,6 @@ async def resolve_igdb_platform(
     platform_name: str
 ) -> dict | None:
 
-    # First use the cached IGDB catalog so autocomplete-selected
-    # platforms resolve without another network request.
-    try:
-        platforms = await get_igdb_platform_catalog()
-
-        target = normalize_title(
-            platform_name
-        )
-
-        for platform in platforms:
-
-            names = [
-                platform.get("name") or "",
-                platform.get("abbreviation") or "",
-                platform.get("alternative_name") or "",
-            ]
-
-            if any(
-                normalize_title(name) == target
-                for name in names
-                if name
-            ):
-                return platform
-
-    except Exception as error:
-        print(
-            f"IGDB cached platform lookup error: {error}"
-        )
-
-    # Fallback for manually entered values that were not selected
-    # from autocomplete.
     safe_name = igdb_escape(
         platform_name
     )
@@ -1255,7 +1159,7 @@ async def resolve_igdb_platform(
         "platforms",
         (
             f'search "{safe_name}"; '
-            f"fields id,name,abbreviation,alternative_name; "
+            f"fields id,name; "
             f"limit 10;"
         )
     )
@@ -1266,17 +1170,11 @@ async def resolve_igdb_platform(
 
     for platform in results:
 
-        names = [
-            platform.get("name") or "",
-            platform.get("abbreviation") or "",
-            platform.get("alternative_name") or "",
-        ]
+        if normalize_title(
+            platform.get("name")
+            or ""
+        ) == target:
 
-        if any(
-            normalize_title(name) == target
-            for name in names
-            if name
-        ):
             return platform
 
     if results:
@@ -3976,7 +3874,7 @@ class GameSearchBrowser(
 @app_commands.describe(
     media_type="Choose Movie, Game, or Series.",
     timeframe="Choose week or month.",
-    platform="Optional game platform. Start typing to search IGDB."
+    platform="Optional game platform. Start typing to search platforms."
 )
 @app_commands.rename(
     media_type="type",
@@ -4168,7 +4066,7 @@ async def upcoming(
 @app_commands.describe(
     media_type="Choose Movie, Game, or Series.",
     title="Title to search for.",
-    platform="Optional game platform. Start typing to search IGDB."
+    platform="Optional game platform. Start typing to search platforms."
 )
 @app_commands.rename(
     media_type="type"
@@ -4343,7 +4241,7 @@ async def search(
 @app_commands.describe(
     media_type="Choose Movie, Game, or Series.",
     title="Upcoming title.",
-    platform="Optional game platform. Start typing to search IGDB."
+    platform="Optional game platform. Start typing to search platforms."
 )
 @app_commands.rename(
     media_type="type"
