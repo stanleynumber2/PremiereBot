@@ -1,2 +1,2 @@
-# PremiereBot
-Simple bot to share upcoming shows and movies. 
+# Release Tracker
+Simple bot to share upcoming games,shows and movies. 
