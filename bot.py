@@ -9,7 +9,11 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 6.2.2")
+print("PremiereBot code version: 6.2.4")
+
+# 6.2.4 is based on the known-good 6.1 command/data logic.
+# The only intended feature change is local platform autocomplete.
+# Autocomplete never contacts IGDB; IGDB is only contacted when a command runs.
 
 
 # =========================================================
@@ -519,7 +523,7 @@ def format_genres(
     if not genres:
         return "Genre unavailable"
 
-    return " â¢ ".join(
+    return " \U00002022 ".join(
         genres[:3]
     )
 
@@ -553,7 +557,7 @@ def format_cast(
     if not names:
         return "Cast unavailable"
 
-    return " â¢ ".join(names)
+    return " \U00002022 ".join(names)
 
 
 def get_us_watch_data(
@@ -645,7 +649,7 @@ def format_tv_availability(
     if not names:
         return None
 
-    return " â¢ ".join(
+    return " \U00002022 ".join(
         names[:5]
     )
 
@@ -661,7 +665,7 @@ def format_search_availability(
     if not names:
         return None
 
-    return " â¢ ".join(
+    return " \U00002022 ".join(
         names[:6]
     )
 
@@ -878,8 +882,8 @@ def score_meter(
 
     if vote_count <= 0:
         return (
-            "â­ï¸ **Not Rated Yet**\n"
-            "`â±â±â±â±â±â±â±â±â±â±`"
+            "\U00002b50\U0000fe0f **Not Rated Yet**\n"
+            "`\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1`"
         )
 
     rating = max(
@@ -891,12 +895,12 @@ def score_meter(
     empty = 10 - filled
 
     bar = (
-        "â°" * filled
-        + "â±" * empty
+        "\U000025b0" * filled
+        + "\U000025b1" * empty
     )
 
     return (
-        f"â­ï¸ **{rating:.1f}/10**\n"
+        f"\U00002b50\U0000fe0f **{rating:.1f}/10**\n"
         f"`{bar}`"
     )
 
@@ -919,8 +923,8 @@ def game_score_meter(
 
     if not rating or not count:
         return (
-            "â­ï¸ **Not Rated Yet**\n"
-            "`â±â±â±â±â±â±â±â±â±â±`"
+            "\U00002b50\U0000fe0f **Not Rated Yet**\n"
+            "`\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1\U000025b1`"
         )
 
     ten_point_rating = (
@@ -942,12 +946,12 @@ def game_score_meter(
     empty = 10 - filled
 
     bar = (
-        "â°" * filled
-        + "â±" * empty
+        "\U000025b0" * filled
+        + "\U000025b1" * empty
     )
 
     return (
-        f"â­ï¸ **{ten_point_rating:.1f}/10**\n"
+        f"\U00002b50\U0000fe0f **{ten_point_rating:.1f}/10**\n"
         f"`{bar}`"
     )
 
@@ -1263,7 +1267,7 @@ def format_game_platforms(
     if not names:
         return "Platform unavailable"
 
-    return " â¢ ".join(
+    return " \U00002022 ".join(
         names[:4]
     )
 
@@ -1292,7 +1296,7 @@ def format_game_genres(
     if not names:
         return "Genre unavailable"
 
-    return " â¢ ".join(
+    return " \U00002022 ".join(
         names[:3]
     )
 
@@ -1336,12 +1340,12 @@ def format_game_companies(
                 publishers.append(name)
 
     if developers:
-        return " â¢ ".join(
+        return " \U00002022 ".join(
             developers[:2]
         )
 
     if publishers:
-        return " â¢ ".join(
+        return " \U00002022 ".join(
             publishers[:2]
         )
 
@@ -2494,16 +2498,16 @@ async def build_upcoming_embed(
         )
 
         metadata_lines = [
-            f"ð·ï¸ *{genre_text}*",
-            f"ð­ **{cast_text}**",
-            f"ð **{runtime_text}**",
+            f"\U0001f3f7\U0000fe0f *{genre_text}*",
+            f"\U0001f3ad **{cast_text}**",
+            f"\U0001f552 **{runtime_text}**",
         ]
 
     else:
 
         metadata_lines = [
-            f"ð·ï¸ *{genre_text}*",
-            f"ð­ **{cast_text}**",
+            f"\U0001f3f7\U0000fe0f *{genre_text}*",
+            f"\U0001f3ad **{cast_text}**",
         ]
 
         availability = (
@@ -2515,7 +2519,7 @@ async def build_upcoming_embed(
         if availability:
 
             metadata_lines.append(
-                f"ðº **{availability}**"
+                f"\U0001f4fa **{availability}**"
             )
 
     metadata = "\n".join(
@@ -2525,8 +2529,8 @@ async def build_upcoming_embed(
     description = (
         f"{metadata}\n\n"
         f"{overview}\n\n"
-        f"ð **{format_release_date(date_string)}**\n"
-        f"â³ **{format_countdown(date_string)}**\n"
+        f"\U0001f4c5 **{format_release_date(date_string)}**\n"
+        f"\U000023f3 **{format_countdown(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
 
@@ -2543,7 +2547,7 @@ async def build_upcoming_embed(
 
     embed.set_author(
         name=(
-            f"PREMIEREBOT  â¢  "
+            f"PREMIEREBOT  \U00002022  "
             f"{media_label}"
         )
     )
@@ -2572,7 +2576,7 @@ async def build_upcoming_embed(
         embed.set_footer(
             text=(
                 "Data provided by TMDb "
-                "â¢ Availability powered by JustWatch"
+                "\U00002022 Availability powered by JustWatch"
             )
         )
 
@@ -2632,9 +2636,9 @@ async def build_game_upcoming_embed(
 
     metadata = "\n".join(
         [
-            f"ð·ï¸ *{genre_text}*",
-            f"ð¢ **{company_text}**",
-            f"ð® **{platform_text}**",
+            f"\U0001f3f7\U0000fe0f *{genre_text}*",
+            f"\U0001f3e2 **{company_text}**",
+            f"\U0001f3ae **{platform_text}**",
         ]
     )
 
@@ -2645,8 +2649,8 @@ async def build_game_upcoming_embed(
     description = (
         f"{metadata}\n\n"
         f"{summary}\n\n"
-        f"ð **{format_unix_date(release_timestamp)}**\n"
-        f"â³ **{format_countdown(date_string)}**\n"
+        f"\U0001f4c5 **{format_unix_date(release_timestamp)}**\n"
+        f"\U000023f3 **{format_countdown(date_string)}**\n"
         f"{game_score_meter(game)}"
     )
 
@@ -2662,7 +2666,7 @@ async def build_game_upcoming_embed(
     )
 
     embed.set_author(
-        name="PREMIEREBOT  â¢  GAME"
+        name="PREMIEREBOT  \U00002022  GAME"
     )
 
     cover_url = igdb_cover_url(
@@ -2795,15 +2799,15 @@ async def build_search_embed(
     )
 
     metadata_lines = [
-        f"ð·ï¸ *{genre_text}*",
-        f"ð­ **{cast_text}**",
-        f"ð **{runtime_text}**",
+        f"\U0001f3f7\U0000fe0f *{genre_text}*",
+        f"\U0001f3ad **{cast_text}**",
+        f"\U0001f552 **{runtime_text}**",
     ]
 
     if availability:
 
         metadata_lines.append(
-            f"ðº **{availability}**"
+            f"\U0001f4fa **{availability}**"
         )
 
     metadata = "\n".join(
@@ -2813,7 +2817,7 @@ async def build_search_embed(
     description = (
         f"{metadata}\n\n"
         f"{overview}\n\n"
-        f"ð **{format_release_date(date_string)}**\n"
+        f"\U0001f4c5 **{format_release_date(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
 
@@ -2830,7 +2834,7 @@ async def build_search_embed(
 
     embed.set_author(
         name=(
-            f"PREMIEREBOT  â¢  "
+            f"PREMIEREBOT  \U00002022  "
             f"{media_label}"
         )
     )
@@ -2854,7 +2858,7 @@ async def build_search_embed(
         embed.set_footer(
             text=(
                 "Data provided by TMDb "
-                "â¢ Availability powered by JustWatch"
+                "\U00002022 Availability powered by JustWatch"
             )
         )
 
@@ -2937,9 +2941,9 @@ async def build_game_search_embed(
 
     metadata = "\n".join(
         [
-            f"ð·ï¸ *{genre_text}*",
-            f"ð¢ **{company_text}**",
-            f"ð® **{platform_text}**",
+            f"\U0001f3f7\U0000fe0f *{genre_text}*",
+            f"\U0001f3e2 **{company_text}**",
+            f"\U0001f3ae **{platform_text}**",
         ]
     )
 
@@ -2952,7 +2956,7 @@ async def build_game_search_embed(
 
         description += (
             f"\n\n"
-            f"ð **{format_unix_date(release_timestamp)}**"
+            f"\U0001f4c5 **{format_unix_date(release_timestamp)}**"
         )
 
     description += (
@@ -2972,7 +2976,7 @@ async def build_game_search_embed(
     )
 
     embed.set_author(
-        name="PREMIEREBOT  â¢  GAME"
+        name="PREMIEREBOT  \U00002022  GAME"
     )
 
     cover_url = igdb_cover_url(
@@ -3183,8 +3187,8 @@ async def build_countdown_embed(
     )
 
     description = (
-        f"ð **{format_release_date(date_string)}**\n"
-        f"â³ **{format_exact_countdown(date_string)}**"
+        f"\U0001f4c5 **{format_release_date(date_string)}**\n"
+        f"\U000023f3 **{format_exact_countdown(date_string)}**"
     )
 
     embed = discord.Embed(
@@ -3200,7 +3204,7 @@ async def build_countdown_embed(
 
     embed.set_author(
         name=(
-            f"PREMIEREBOT  â¢  "
+            f"PREMIEREBOT  \U00002022  "
             f"{media_label} COUNTDOWN"
         )
     )
@@ -3245,9 +3249,9 @@ async def build_game_countdown_embed(
     )
 
     description = (
-        f"ð® **{platform_text}**\n"
-        f"ð **{format_unix_date(timestamp)}**\n"
-        f"â³ **{format_game_exact_countdown(timestamp)}**"
+        f"\U0001f3ae **{platform_text}**\n"
+        f"\U0001f4c5 **{format_unix_date(timestamp)}**\n"
+        f"\U000023f3 **{format_game_exact_countdown(timestamp)}**"
     )
 
     embed = discord.Embed(
@@ -3263,7 +3267,7 @@ async def build_game_countdown_embed(
 
     embed.set_author(
         name=(
-            "PREMIEREBOT  â¢  "
+            "PREMIEREBOT  \U00002022  "
             "GAME COUNTDOWN"
         )
     )
@@ -3373,7 +3377,7 @@ class ReleaseBrowser(
 
     @discord.ui.button(
         label="Previous",
-        emoji="âï¸",
+        emoji="\U000025c0\U0000fe0f",
         style=discord.ButtonStyle.secondary
     )
     async def previous_button(
@@ -3410,7 +3414,7 @@ class ReleaseBrowser(
 
     @discord.ui.button(
         label="Next",
-        emoji="â¶ï¸",
+        emoji="\U000025b6\U0000fe0f",
         style=discord.ButtonStyle.secondary
     )
     async def next_button(
@@ -3513,7 +3517,7 @@ class SearchBrowser(
 
     @discord.ui.button(
         label="Previous",
-        emoji="âï¸",
+        emoji="\U000025c0\U0000fe0f",
         style=discord.ButtonStyle.secondary
     )
     async def previous_button(
@@ -3550,7 +3554,7 @@ class SearchBrowser(
 
     @discord.ui.button(
         label="Next",
-        emoji="â¶ï¸",
+        emoji="\U000025b6\U0000fe0f",
         style=discord.ButtonStyle.secondary
     )
     async def next_button(
@@ -3660,7 +3664,7 @@ class GameReleaseBrowser(
 
     @discord.ui.button(
         label="Previous",
-        emoji="âï¸",
+        emoji="\U000025c0\U0000fe0f",
         style=discord.ButtonStyle.secondary
     )
     async def previous_button(
@@ -3697,7 +3701,7 @@ class GameReleaseBrowser(
 
     @discord.ui.button(
         label="Next",
-        emoji="â¶ï¸",
+        emoji="\U000025b6\U0000fe0f",
         style=discord.ButtonStyle.secondary
     )
     async def next_button(
@@ -3803,7 +3807,7 @@ class GameSearchBrowser(
 
     @discord.ui.button(
         label="Previous",
-        emoji="âï¸",
+        emoji="\U000025c0\U0000fe0f",
         style=discord.ButtonStyle.secondary
     )
     async def previous_button(
@@ -3840,7 +3844,7 @@ class GameSearchBrowser(
 
     @discord.ui.button(
         label="Next",
-        emoji="â¶ï¸",
+        emoji="\U000025b6\U0000fe0f",
         style=discord.ButtonStyle.secondary
     )
     async def next_button(
