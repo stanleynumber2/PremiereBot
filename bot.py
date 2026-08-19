@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 
 
-print("PremiereBot code version: 6.0")
+print("PremiereBot code version: 6.2")
 
 
 # =========================================================
@@ -20,7 +20,6 @@ DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID")
 
-# Support the most likely Railway variable spellings.
 TWITCH_CLIENT_ID = (
     os.environ.get("TWITCH_CLIENT_ID")
     or os.environ.get("Twitch_client_id")
@@ -32,7 +31,6 @@ TWITCH_CLIENT_SECRET = (
     or os.environ.get("Twitch_client_secret")
     or os.environ.get("Twitch_Client_Secret")
 )
-
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_WEB_URL = "https://www.themoviedb.org"
@@ -53,9 +51,7 @@ if not DISCORD_GUILD_ID:
     raise RuntimeError("DISCORD_GUILD_ID is missing.")
 
 
-GUILD = discord.Object(
-    id=int(DISCORD_GUILD_ID)
-)
+GUILD = discord.Object(id=int(DISCORD_GUILD_ID))
 
 
 # =========================================================
@@ -65,42 +61,23 @@ GUILD = discord.Object(
 class PremiereClient(discord.Client):
 
     def __init__(self):
-
-        super().__init__(
-            intents=discord.Intents.default()
-        )
-
+        super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
 
-
     async def setup_hook(self):
-
         print("PremiereBot setup started.")
 
-        self.tree.copy_global_to(
-            guild=GUILD
-        )
+        self.tree.copy_global_to(guild=GUILD)
 
-        synced = await self.tree.sync(
-            guild=GUILD
-        )
+        synced = await self.tree.sync(guild=GUILD)
 
-        print(
-            f"Synced {len(synced)} guild command(s)."
-        )
+        print(f"Synced {len(synced)} guild command(s).")
 
         for command in synced:
-
-            print(
-                f"Synced: /{command.name}"
-            )
-
+            print(f"Synced: /{command.name}")
 
     async def on_ready(self):
-
-        print(
-            f"PremiereBot online as {self.user}"
-        )
+        print(f"PremiereBot online as {self.user}")
 
 
 client = PremiereClient()
@@ -111,60 +88,9 @@ client = PremiereClient()
 # =========================================================
 
 TYPE_CHOICES = [
-
-    app_commands.Choice(
-        name="Movie",
-        value="movie"
-    ),
-
-    app_commands.Choice(
-        name="TV",
-        value="tv"
-    ),
-
-    app_commands.Choice(
-        name="Game",
-        value="game"
-    ),
-]
-
-
-PLATFORM_CHOICES = [
-
-    app_commands.Choice(
-        name="PC",
-        value="PC (Microsoft Windows)"
-    ),
-
-    app_commands.Choice(
-        name="PlayStation 5",
-        value="PlayStation 5"
-    ),
-
-    app_commands.Choice(
-        name="Xbox Series X|S",
-        value="Xbox Series X|S"
-    ),
-
-    app_commands.Choice(
-        name="Nintendo Switch 2",
-        value="Nintendo Switch 2"
-    ),
-
-    app_commands.Choice(
-        name="Nintendo Switch",
-        value="Nintendo Switch"
-    ),
-
-    app_commands.Choice(
-        name="PlayStation 4",
-        value="PlayStation 4"
-    ),
-
-    app_commands.Choice(
-        name="Xbox One",
-        value="Xbox One"
-    ),
+    app_commands.Choice(name="Movie", value="movie"),
+    app_commands.Choice(name="Game", value="game"),
+    app_commands.Choice(name="Series", value="tv"),
 ]
 
 
@@ -186,21 +112,15 @@ async def fetch_tmdb(
         "language": "en-US",
     }
 
-    timeout = aiohttp.ClientTimeout(
-        total=15
-    )
+    timeout = aiohttp.ClientTimeout(total=15)
 
-    async with aiohttp.ClientSession(
-        timeout=timeout
-    ) as session:
-
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(
             f"{TMDB_BASE_URL}/{endpoint}",
             params=params
         ) as response:
 
             if response.status != 200:
-
                 body = await response.text()
 
                 raise RuntimeError(
@@ -233,6 +153,10 @@ async def get_details(
 _igdb_access_token = None
 _igdb_token_expires_at = 0
 
+_igdb_platform_cache = []
+_igdb_platform_cache_expires_at = 0
+_igdb_platform_lock = asyncio.Lock()
+
 
 async def get_igdb_access_token(
     force_refresh: bool = False
@@ -260,31 +184,19 @@ async def get_igdb_access_token(
     ):
         return _igdb_access_token
 
+    timeout = aiohttp.ClientTimeout(total=15)
 
-    timeout = aiohttp.ClientTimeout(
-        total=15
-    )
-
-    async with aiohttp.ClientSession(
-        timeout=timeout
-    ) as session:
-
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
             TWITCH_TOKEN_URL,
             params={
-                "client_id":
-                    TWITCH_CLIENT_ID,
-
-                "client_secret":
-                    TWITCH_CLIENT_SECRET,
-
-                "grant_type":
-                    "client_credentials",
+                "client_id": TWITCH_CLIENT_ID,
+                "client_secret": TWITCH_CLIENT_SECRET,
+                "grant_type": "client_credentials",
             }
         ) as response:
 
             if response.status != 200:
-
                 body = await response.text()
 
                 raise RuntimeError(
@@ -295,10 +207,7 @@ async def get_igdb_access_token(
 
             data = await response.json()
 
-
-    token = data.get(
-        "access_token"
-    )
+    token = data.get("access_token")
 
     expires_in = int(
         data.get("expires_in")
@@ -310,10 +219,8 @@ async def get_igdb_access_token(
             "Twitch did not return an access token."
         )
 
-
     _igdb_access_token = token
 
-    # Refresh slightly before actual expiration.
     _igdb_token_expires_at = (
         time.time()
         + max(
@@ -334,24 +241,14 @@ async def fetch_igdb(
     token = await get_igdb_access_token()
 
     headers = {
-        "Client-ID":
-            TWITCH_CLIENT_ID,
-
-        "Authorization":
-            f"Bearer {token}",
-
-        "Accept":
-            "application/json",
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
     }
 
-    timeout = aiohttp.ClientTimeout(
-        total=20
-    )
+    timeout = aiohttp.ClientTimeout(total=20)
 
-    async with aiohttp.ClientSession(
-        timeout=timeout
-    ) as session:
-
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
             f"{IGDB_BASE_URL}/{endpoint}",
             headers=headers,
@@ -362,7 +259,6 @@ async def fetch_igdb(
                 response.status == 401
                 and retry
             ):
-
                 await get_igdb_access_token(
                     force_refresh=True
                 )
@@ -374,7 +270,6 @@ async def fetch_igdb(
                 )
 
             if response.status != 200:
-
                 body = await response.text()
 
                 raise RuntimeError(
@@ -384,6 +279,255 @@ async def fetch_igdb(
                 )
 
             return await response.json()
+
+
+# =========================================================
+# IGDB PLATFORM AUTOCOMPLETE
+# =========================================================
+
+async def get_igdb_platform_catalog() -> list[dict]:
+    """
+    Pull the platform catalog directly from IGDB and cache it in memory.
+    Discord only shows up to 25 autocomplete suggestions at once, but the
+    entire IGDB platform catalog remains searchable as the user types.
+    """
+
+    global _igdb_platform_cache
+    global _igdb_platform_cache_expires_at
+
+    now = time.time()
+
+    if (
+        _igdb_platform_cache
+        and now < _igdb_platform_cache_expires_at
+    ):
+        return _igdb_platform_cache
+
+    async with _igdb_platform_lock:
+
+        now = time.time()
+
+        if (
+            _igdb_platform_cache
+            and now < _igdb_platform_cache_expires_at
+        ):
+            return _igdb_platform_cache
+
+        platforms = await fetch_igdb(
+            "platforms",
+            (
+                "fields id,name,abbreviation,alternative_name;"
+                "sort name asc;"
+                "limit 500;"
+            )
+        )
+
+        platforms = [
+            platform
+            for platform in platforms
+            if platform.get("name")
+        ]
+
+        platforms.sort(
+            key=lambda platform:
+                platform.get("name", "").lower()
+        )
+
+        _igdb_platform_cache = platforms
+
+        # IGDB's platform catalog does not need to be re-fetched often.
+        _igdb_platform_cache_expires_at = (
+            time.time() + 21600
+        )
+
+        return _igdb_platform_cache
+
+
+def platform_search_text(
+    platform: dict
+) -> str:
+
+    parts = [
+        platform.get("name") or "",
+        platform.get("abbreviation") or "",
+        platform.get("alternative_name") or "",
+    ]
+
+    return " ".join(parts).lower()
+
+
+async def platform_autocomplete(
+    interaction: discord.Interaction,
+    current: str
+) -> list[app_commands.Choice[str]]:
+
+    try:
+        platforms = await get_igdb_platform_catalog()
+
+    except Exception as error:
+        print(
+            f"IGDB platform autocomplete error: {error}"
+        )
+
+        return []
+
+    current_text = current.strip().lower()
+
+    if current_text:
+
+        matches = [
+            platform
+            for platform in platforms
+            if current_text in platform_search_text(
+                platform
+            )
+        ]
+
+        # Exact abbreviation/name matches first, then starts-with,
+        # then normal contains matches.
+        def match_rank(platform: dict):
+            name = (
+                platform.get("name")
+                or ""
+            ).lower()
+
+            abbreviation = (
+                platform.get("abbreviation")
+                or ""
+            ).lower()
+
+            alternative = (
+                platform.get("alternative_name")
+                or ""
+            ).lower()
+
+            if current_text in (
+                name,
+                abbreviation,
+                alternative
+            ):
+                rank = 0
+
+            elif (
+                name.startswith(current_text)
+                or abbreviation.startswith(current_text)
+                or alternative.startswith(current_text)
+            ):
+                rank = 1
+
+            else:
+                rank = 2
+
+            return (
+                rank,
+                name
+            )
+
+        matches.sort(
+            key=match_rank
+        )
+
+    else:
+        # When the field is first opened, lead with recognizable
+        # console/PC platforms. These are still matched against the
+        # live IGDB catalog; the values are not hard-coded platform IDs.
+        featured_names = [
+            "PC (Microsoft Windows)",
+            "PlayStation 5",
+            "Xbox Series X|S",
+            "Nintendo Switch 2",
+            "Nintendo Switch",
+            "PlayStation 4",
+            "Xbox One",
+            "PlayStation 3",
+            "Xbox 360",
+            "Wii U",
+            "Nintendo 3DS",
+            "PlayStation Vita",
+            "Wii",
+            "PlayStation 2",
+            "Nintendo DS",
+            "PlayStation Portable",
+            "Xbox",
+            "Nintendo GameCube",
+            "Dreamcast",
+            "Nintendo 64",
+            "PlayStation",
+            "Super Nintendo Entertainment System",
+            "Nintendo Entertainment System",
+            "Game Boy Advance",
+            "Game Boy Color",
+        ]
+
+        by_name = {
+            (
+                platform.get("name")
+                or ""
+            ).lower():
+                platform
+            for platform in platforms
+        }
+
+        matches = []
+
+        for name in featured_names:
+
+            platform = by_name.get(
+                name.lower()
+            )
+
+            if (
+                platform
+                and platform not in matches
+            ):
+                matches.append(platform)
+
+        # Fill any missing slots alphabetically from IGDB.
+        for platform in platforms:
+
+            if platform not in matches:
+                matches.append(platform)
+
+            if len(matches) >= 25:
+                break
+
+    choices = []
+
+    for platform in matches[:25]:
+
+        name = platform.get("name")
+
+        if not name:
+            continue
+
+        abbreviation = (
+            platform.get("abbreviation")
+            or ""
+        ).strip()
+
+        display_name = name
+
+        if (
+            abbreviation
+            and abbreviation.lower()
+            not in name.lower()
+        ):
+            display_name = (
+                f"{name} ({abbreviation})"
+            )
+
+        # Discord choice labels and values have length limits.
+        display_name = display_name[:100]
+        value = name[:100]
+
+        choices.append(
+            app_commands.Choice(
+                name=display_name,
+                value=value
+            )
+        )
+
+    return choices
 
 
 # =========================================================
@@ -398,13 +542,9 @@ def format_runtime(
     runtime = None
 
     if media_type == "movie":
-
-        runtime = details.get(
-            "runtime"
-        )
+        runtime = details.get("runtime")
 
     else:
-
         runtimes = (
             details.get("episode_run_time")
             or []
@@ -413,14 +553,11 @@ def format_runtime(
         if runtimes:
             runtime = runtimes[0]
 
-
     if not runtime:
         return "Runtime unavailable"
 
-
     hours = runtime // 60
     minutes = runtime % 60
-
 
     if hours and minutes:
         return f"{hours}h {minutes}m"
@@ -447,7 +584,7 @@ def format_genres(
     if not genres:
         return "Genre unavailable"
 
-    return " • ".join(
+    return " â¢ ".join(
         genres[:3]
     )
 
@@ -478,12 +615,10 @@ def format_cast(
         if len(names) == 3:
             break
 
-
     if not names:
         return "Cast unavailable"
 
-
-    return " • ".join(names)
+    return " â¢ ".join(names)
 
 
 def get_us_watch_data(
@@ -565,7 +700,6 @@ def format_tv_availability(
         ):
             names.append(name)
 
-
     for name in get_us_provider_names(
         details
     ):
@@ -573,12 +707,10 @@ def format_tv_availability(
         if name not in names:
             names.append(name)
 
-
     if not names:
         return None
 
-
-    return " • ".join(
+    return " â¢ ".join(
         names[:5]
     )
 
@@ -594,7 +726,7 @@ def format_search_availability(
     if not names:
         return None
 
-    return " • ".join(
+    return " â¢ ".join(
         names[:6]
     )
 
@@ -679,7 +811,6 @@ def format_countdown(
     if total_seconds <= 0:
         return "Released"
 
-
     days, remainder = divmod(
         total_seconds,
         86400
@@ -694,7 +825,6 @@ def format_countdown(
         remainder,
         60
     )
-
 
     parts = []
 
@@ -731,7 +861,6 @@ def format_exact_countdown(
 
     if total_seconds <= 0:
         return "Released"
-
 
     days, remainder = divmod(
         total_seconds,
@@ -780,7 +909,6 @@ def format_game_exact_countdown(
     if total_seconds <= 0:
         return "Released"
 
-
     days, remainder = divmod(
         total_seconds,
         86400
@@ -814,12 +942,10 @@ def score_meter(
 ) -> str:
 
     if vote_count <= 0:
-
         return (
-            "⭐️ **Not Rated Yet**\n"
-            "`▱▱▱▱▱▱▱▱▱▱`"
+            "â­ï¸ **Not Rated Yet**\n"
+            "`â±â±â±â±â±â±â±â±â±â±`"
         )
-
 
     rating = max(
         0,
@@ -830,12 +956,12 @@ def score_meter(
     empty = 10 - filled
 
     bar = (
-        "▰" * filled
-        + "▱" * empty
+        "â°" * filled
+        + "â±" * empty
     )
 
     return (
-        f"⭐️ **{rating:.1f}/10**\n"
+        f"â­ï¸ **{rating:.1f}/10**\n"
         f"`{bar}`"
     )
 
@@ -856,14 +982,11 @@ def game_score_meter(
         or 0
     )
 
-
     if not rating or not count:
-
         return (
-            "⭐️ **Not Rated Yet**\n"
-            "`▱▱▱▱▱▱▱▱▱▱`"
+            "â­ï¸ **Not Rated Yet**\n"
+            "`â±â±â±â±â±â±â±â±â±â±`"
         )
-
 
     ten_point_rating = (
         float(rating) / 10
@@ -884,12 +1007,12 @@ def game_score_meter(
     empty = 10 - filled
 
     bar = (
-        "▰" * filled
-        + "▱" * empty
+        "â°" * filled
+        + "â±" * empty
     )
 
     return (
-        f"⭐️ **{ten_point_rating:.1f}/10**\n"
+        f"â­ï¸ **{ten_point_rating:.1f}/10**\n"
         f"`{bar}`"
     )
 
@@ -953,7 +1076,6 @@ def search_relevance(
         original_norm
     ]
 
-
     exact = any(
         candidate == query_norm
         for candidate in titles
@@ -971,7 +1093,6 @@ def search_relevance(
         for candidate in titles
     )
 
-
     vote_count = int(
         item.get("vote_count")
         or 0
@@ -981,7 +1102,6 @@ def search_relevance(
         item.get("popularity")
         or 0
     )
-
 
     if exact:
         match_rank = 0
@@ -994,7 +1114,6 @@ def search_relevance(
 
     else:
         match_rank = 3
-
 
     return (
         match_rank,
@@ -1017,7 +1136,6 @@ def game_search_relevance(
         or ""
     )
 
-
     if title_norm == query_norm:
         match_rank = 0
 
@@ -1031,7 +1149,6 @@ def game_search_relevance(
 
     else:
         match_rank = 3
-
 
     rating_count = int(
         game.get("total_rating_count")
@@ -1077,25 +1194,20 @@ def igdb_cover_url(
     if not url:
         return None
 
-
     if url.startswith("//"):
         url = "https:" + url
 
-
     if thumbnail:
-
         url = url.replace(
             "t_thumb",
             "t_cover_big"
         )
 
     else:
-
         url = url.replace(
             "t_thumb",
             "t_1080p"
         )
-
 
     return url
 
@@ -1104,6 +1216,37 @@ async def resolve_igdb_platform(
     platform_name: str
 ) -> dict | None:
 
+    # First use the cached IGDB catalog so autocomplete-selected
+    # platforms resolve without another network request.
+    try:
+        platforms = await get_igdb_platform_catalog()
+
+        target = normalize_title(
+            platform_name
+        )
+
+        for platform in platforms:
+
+            names = [
+                platform.get("name") or "",
+                platform.get("abbreviation") or "",
+                platform.get("alternative_name") or "",
+            ]
+
+            if any(
+                normalize_title(name) == target
+                for name in names
+                if name
+            ):
+                return platform
+
+    except Exception as error:
+        print(
+            f"IGDB cached platform lookup error: {error}"
+        )
+
+    # Fallback for manually entered values that were not selected
+    # from autocomplete.
     safe_name = igdb_escape(
         platform_name
     )
@@ -1112,30 +1255,32 @@ async def resolve_igdb_platform(
         "platforms",
         (
             f'search "{safe_name}"; '
-            f"fields id,name; "
+            f"fields id,name,abbreviation,alternative_name; "
             f"limit 10;"
         )
     )
-
 
     target = normalize_title(
         platform_name
     )
 
-
     for platform in results:
 
-        if normalize_title(
-            platform.get("name")
-            or ""
-        ) == target:
+        names = [
+            platform.get("name") or "",
+            platform.get("abbreviation") or "",
+            platform.get("alternative_name") or "",
+        ]
 
+        if any(
+            normalize_title(name) == target
+            for name in names
+            if name
+        ):
             return platform
-
 
     if results:
         return results[0]
-
 
     return None
 
@@ -1161,7 +1306,6 @@ def get_game_platform_names(
         ):
             names.append(name)
 
-
     for release in (
         game.get("release_dates")
         or []
@@ -1182,7 +1326,6 @@ def get_game_platform_names(
         ):
             names.append(name)
 
-
     return names
 
 
@@ -1194,11 +1337,9 @@ def game_matches_platform(
     if not platform_name:
         return True
 
-
     wanted = normalize_title(
         platform_name
     )
-
 
     return any(
         normalize_title(name)
@@ -1217,17 +1358,14 @@ def format_game_platforms(
     if selected_platform:
         return selected_platform
 
-
     names = get_game_platform_names(
         game
     )
 
-
     if not names:
         return "Platform unavailable"
 
-
-    return " • ".join(
+    return " â¢ ".join(
         names[:4]
     )
 
@@ -1253,12 +1391,10 @@ def format_game_genres(
         ):
             names.append(name)
 
-
     if not names:
         return "Genre unavailable"
 
-
-    return " • ".join(
+    return " â¢ ".join(
         names[:3]
     )
 
@@ -1269,7 +1405,6 @@ def format_game_companies(
 
     developers = []
     publishers = []
-
 
     for relationship in (
         game.get("involved_companies")
@@ -1288,14 +1423,12 @@ def format_game_companies(
         if not name:
             continue
 
-
         if relationship.get(
             "developer"
         ):
 
             if name not in developers:
                 developers.append(name)
-
 
         elif relationship.get(
             "publisher"
@@ -1304,18 +1437,15 @@ def format_game_companies(
             if name not in publishers:
                 publishers.append(name)
 
-
     if developers:
-        return " • ".join(
+        return " â¢ ".join(
             developers[:2]
         )
 
-
     if publishers:
-        return " • ".join(
+        return " â¢ ".join(
             publishers[:2]
         )
-
 
     return "Studio unavailable"
 
@@ -1332,16 +1462,13 @@ def get_game_release_timestamp(
         ).timestamp()
     )
 
-
     possible_dates = []
-
 
     if platform_name:
 
         wanted = normalize_title(
             platform_name
         )
-
 
         for release in (
             game.get("release_dates")
@@ -1362,10 +1489,8 @@ def get_game_release_timestamp(
                 or ""
             )
 
-
             if not timestamp:
                 continue
-
 
             if (
                 normalize_title(
@@ -1375,18 +1500,15 @@ def get_game_release_timestamp(
             ):
                 continue
 
-
             if (
                 future_only
                 and int(timestamp) < now
             ):
                 continue
 
-
             possible_dates.append(
                 int(timestamp)
             )
-
 
     else:
 
@@ -1405,10 +1527,8 @@ def get_game_release_timestamp(
                     int(first_release)
                 )
 
-
     if not possible_dates:
         return None
-
 
     return min(
         possible_dates
@@ -1427,7 +1547,6 @@ async def search_games(
     safe_title = igdb_escape(
         title
     )
-
 
     fields = (
         "id,"
@@ -1450,7 +1569,6 @@ async def search_games(
         "url"
     )
 
-
     results = await fetch_igdb(
         "games",
         (
@@ -1459,7 +1577,6 @@ async def search_games(
             f"limit 25;"
         )
     )
-
 
     if platform_name:
 
@@ -1472,14 +1589,11 @@ async def search_games(
             )
         ]
 
-
     query_norm = normalize_title(
         title
     )
 
-
     strong_results = []
-
 
     for game in results:
 
@@ -1487,7 +1601,6 @@ async def search_games(
             game.get("name")
             or ""
         )
-
 
         if (
             game_title == query_norm
@@ -1501,15 +1614,8 @@ async def search_games(
                 game
             )
 
-
-    # If the strict text filter somehow
-    # removes everything, trust IGDB's
-    # own search ordering rather than
-    # returning nothing.
     if strong_results:
-
         results = strong_results
-
 
     results.sort(
         key=lambda game:
@@ -1518,7 +1624,6 @@ async def search_games(
                 title
             )
     )
-
 
     return results[:10]
 
@@ -1547,7 +1652,6 @@ async def get_upcoming_games(
         + timedelta(days=days)
     )
 
-
     start_timestamp = int(
         datetime(
             today.year,
@@ -1556,7 +1660,6 @@ async def get_upcoming_games(
             tzinfo=timezone.utc
         ).timestamp()
     )
-
 
     end_timestamp = int(
         datetime(
@@ -1570,9 +1673,7 @@ async def get_upcoming_games(
         ).timestamp()
     )
 
-
     platform_filter = ""
-
 
     if platform_name:
 
@@ -1581,7 +1682,6 @@ async def get_upcoming_games(
         )
 
         if not platform:
-
             raise RuntimeError(
                 f"IGDB could not find platform "
                 f"{platform_name}."
@@ -1591,7 +1691,6 @@ async def get_upcoming_games(
             f" & platform = "
             f"{platform['id']}"
         )
-
 
     fields = (
         "date,"
@@ -1615,7 +1714,6 @@ async def get_upcoming_games(
         "game.url"
     )
 
-
     releases = await fetch_igdb(
         "release_dates",
         (
@@ -1628,9 +1726,7 @@ async def get_upcoming_games(
         )
     )
 
-
     games_by_id = {}
-
 
     for release in releases:
 
@@ -1647,18 +1743,15 @@ async def get_upcoming_games(
             "date"
         )
 
-
         if (
             not game_id
             or not release_timestamp
         ):
             continue
 
-
         existing = games_by_id.get(
             game_id
         )
-
 
         if (
             existing is None
@@ -1689,11 +1782,9 @@ async def get_upcoming_games(
                 game_id
             ] = game
 
-
     results = list(
         games_by_id.values()
     )
-
 
     results.sort(
         key=lambda game:
@@ -1704,7 +1795,6 @@ async def get_upcoming_games(
                 or 0
             )
     )
-
 
     return results
 
@@ -1722,37 +1812,29 @@ async def get_movie_collection_parts(
     if not tmdb_id:
         return []
 
-
     details = await fetch_tmdb(
         f"movie/{tmdb_id}"
     )
-
 
     collection = details.get(
         "belongs_to_collection"
     )
 
-
     if not collection:
         return []
-
 
     collection_id = collection.get(
         "id"
     )
 
-
     if not collection_id:
         return []
-
 
     data = await fetch_tmdb(
         f"collection/{collection_id}"
     )
 
-
     parts = []
-
 
     for item in data.get(
         "parts",
@@ -1764,13 +1846,11 @@ async def get_movie_collection_parts(
 
         parts.append(item)
 
-
     parts.sort(
         key=lambda item:
             item.get("release_date")
             or "9999-12-31"
     )
-
 
     return parts
 
@@ -1787,9 +1867,7 @@ async def get_us_movie_release_date(
         f"movie/{movie_id}/release_dates"
     )
 
-
     theatrical_dates = []
-
 
     for country in data.get(
         "results",
@@ -1802,7 +1880,6 @@ async def get_us_movie_release_date(
         ):
             continue
 
-
         for release in country.get(
             "release_dates",
             []
@@ -1812,22 +1889,18 @@ async def get_us_movie_release_date(
                 "type"
             )
 
-
             if release_type not in (
                 3,
                 2
             ):
                 continue
 
-
             raw_date = release.get(
                 "release_date"
             )
 
-
             if not raw_date:
                 continue
-
 
             try:
 
@@ -1841,7 +1914,6 @@ async def get_us_movie_release_date(
             except ValueError:
                 continue
 
-
             theatrical_dates.append(
                 (
                     release_type,
@@ -1849,22 +1921,18 @@ async def get_us_movie_release_date(
                 )
             )
 
-
     if not theatrical_dates:
         return None
-
 
     today = datetime.now(
         timezone.utc
     ).date()
-
 
     future_dates = [
         entry
         for entry in theatrical_dates
         if entry[1].date() >= today
     ]
-
 
     if future_dates:
 
@@ -1883,7 +1951,6 @@ async def get_us_movie_release_date(
             .isoformat()
         )
 
-
     theatrical_dates.sort(
         key=lambda entry: (
             entry[1].date(),
@@ -1892,7 +1959,6 @@ async def get_us_movie_release_date(
             else 1
         )
     )
-
 
     return (
         theatrical_dates[0][1]
@@ -1912,14 +1978,11 @@ async def verify_us_movie_release(
     if not tmdb_id:
         return None
 
-
     data = await fetch_tmdb(
         f"movie/{tmdb_id}/release_dates"
     )
 
-
     us_entries = None
-
 
     for country in data.get(
         "results",
@@ -1936,13 +1999,10 @@ async def verify_us_movie_release(
             us_entries = country
             break
 
-
     if not us_entries:
         return None
 
-
     possible_dates = []
-
 
     for release in us_entries.get(
         "release_dates",
@@ -1953,22 +2013,18 @@ async def verify_us_movie_release(
             "type"
         )
 
-
         if release_type not in (
             3,
             2
         ):
             continue
 
-
         raw_date = release.get(
             "release_date"
         )
 
-
         if not raw_date:
             continue
-
 
         try:
 
@@ -1984,7 +2040,6 @@ async def verify_us_movie_release(
         except ValueError:
             continue
 
-
         if (
             start_date
             <= release_date
@@ -1998,10 +2053,8 @@ async def verify_us_movie_release(
                 )
             )
 
-
     if not possible_dates:
         return None
-
 
     possible_dates.sort(
         key=lambda entry: (
@@ -2012,18 +2065,15 @@ async def verify_us_movie_release(
         )
     )
 
-
     chosen_date = (
         possible_dates[0][1]
     )
-
 
     verified = dict(item)
 
     verified["release_date"] = (
         chosen_date.isoformat()
     )
-
 
     return verified
 
@@ -2037,12 +2087,10 @@ async def verify_us_tv_relevance(
     if not tmdb_id:
         return None
 
-
     details = await get_details(
         "tv",
         tmdb_id
     )
-
 
     origin_countries = (
         details.get("origin_country")
@@ -2050,11 +2098,9 @@ async def verify_us_tv_relevance(
         or []
     )
 
-
     is_us_origin = (
         "US" in origin_countries
     )
-
 
     us_providers = (
         get_us_provider_names(
@@ -2062,19 +2108,15 @@ async def verify_us_tv_relevance(
         )
     )
 
-
     if (
         not is_us_origin
         and not us_providers
     ):
-
         return None
-
 
     verified = dict(item)
 
     verified["_details"] = details
-
 
     return verified
 
@@ -2092,25 +2134,21 @@ async def get_upcoming(
         timezone.utc
     ).date()
 
-
     days = (
         7
         if timeframe == "week"
         else 30
     )
 
-
     end_date = (
         today
         + timedelta(days=days)
     )
 
-
     if media_type == "movie":
 
         endpoint = "discover/movie"
         date_field = "release_date"
-
 
         params = {
             "region": "US",
@@ -2131,12 +2169,10 @@ async def get_upcoming(
                 "false",
         }
 
-
     else:
 
         endpoint = "discover/tv"
         date_field = "first_air_date"
-
 
         params = {
             "first_air_date.gte":
@@ -2155,15 +2191,12 @@ async def get_upcoming(
                 "false",
         }
 
-
     data = await fetch_tmdb(
         endpoint,
         params
     )
 
-
     candidates = []
-
 
     for item in data.get(
         "results",
@@ -2174,10 +2207,8 @@ async def get_upcoming(
             date_field
         )
 
-
         if not date_string:
             continue
-
 
         try:
 
@@ -2189,7 +2220,6 @@ async def get_upcoming(
         except ValueError:
             continue
 
-
         if (
             today
             <= item_date
@@ -2197,7 +2227,6 @@ async def get_upcoming(
         ):
 
             candidates.append(item)
-
 
     if media_type == "movie":
 
@@ -2210,7 +2239,6 @@ async def get_upcoming(
             for item in candidates
         ]
 
-
     else:
 
         checks = [
@@ -2220,15 +2248,12 @@ async def get_upcoming(
             for item in candidates
         ]
 
-
     checked_results = await asyncio.gather(
         *checks,
         return_exceptions=True
     )
 
-
     results = []
-
 
     for result in checked_results:
 
@@ -2243,10 +2268,8 @@ async def get_upcoming(
 
             continue
 
-
         if result is not None:
             results.append(result)
-
 
     results.sort(
         key=lambda item: (
@@ -2263,7 +2286,6 @@ async def get_upcoming(
         )
     )
 
-
     return results
 
 
@@ -2278,7 +2300,6 @@ async def search_titles(
 
     results = []
 
-
     if media_type == "movie":
 
         data = await fetch_tmdb(
@@ -2289,7 +2310,6 @@ async def search_titles(
             }
         )
 
-
         for item in data.get(
             "results",
             []
@@ -2297,7 +2317,6 @@ async def search_titles(
 
             item["_media_type"] = "movie"
             results.append(item)
-
 
     elif media_type == "tv":
 
@@ -2309,7 +2328,6 @@ async def search_titles(
             }
         )
 
-
         for item in data.get(
             "results",
             []
@@ -2317,7 +2335,6 @@ async def search_titles(
 
             item["_media_type"] = "tv"
             results.append(item)
-
 
     else:
 
@@ -2340,7 +2357,6 @@ async def search_titles(
             )
         )
 
-
         for item in movie_data.get(
             "results",
             []
@@ -2348,7 +2364,6 @@ async def search_titles(
 
             item["_media_type"] = "movie"
             results.append(item)
-
 
         for item in tv_data.get(
             "results",
@@ -2358,14 +2373,11 @@ async def search_titles(
             item["_media_type"] = "tv"
             results.append(item)
 
-
     query_norm = normalize_title(
         title
     )
 
-
     relevant = []
-
 
     for item in results:
 
@@ -2375,23 +2387,19 @@ async def search_titles(
             or ""
         )
 
-
         original_title = (
             item.get("original_title")
             or item.get("original_name")
             or ""
         )
 
-
         title_norm = normalize_title(
             item_title
         )
 
-
         original_norm = normalize_title(
             original_title
         )
-
 
         if (
             title_norm == query_norm
@@ -2408,7 +2416,6 @@ async def search_titles(
 
             relevant.append(item)
 
-
     relevant.sort(
         key=lambda item:
             search_relevance(
@@ -2417,9 +2424,7 @@ async def search_titles(
             )
     )
 
-
     collection_results = []
-
 
     strongest_movie = next(
         (
@@ -2431,7 +2436,6 @@ async def search_titles(
         ),
         None
     )
-
 
     if strongest_movie:
 
@@ -2449,11 +2453,9 @@ async def search_titles(
                 f"Collection lookup error: {error}"
             )
 
-
     final_results = []
 
     seen = set()
-
 
     def add_unique(
         item: dict
@@ -2472,7 +2474,6 @@ async def search_titles(
             item_id
         )
 
-
         if (
             item_id is not None
             and key not in seen
@@ -2484,23 +2485,16 @@ async def search_titles(
                 item
             )
 
-
     if relevant:
-
         add_unique(
             relevant[0]
         )
 
-
     for item in collection_results:
-
         add_unique(item)
-
 
     for item in relevant:
-
         add_unique(item)
-
 
     return final_results[:10]
 
@@ -2516,11 +2510,9 @@ async def build_upcoming_embed(
 
     tmdb_id = item.get("id")
 
-
     details = item.get(
         "_details"
     )
-
 
     if not details:
 
@@ -2528,7 +2520,6 @@ async def build_upcoming_embed(
             media_type,
             tmdb_id
         )
-
 
     if media_type == "movie":
 
@@ -2538,14 +2529,11 @@ async def build_upcoming_embed(
             or "Untitled"
         )
 
-
         date_string = item.get(
             "release_date"
         )
 
-
         media_label = "MOVIE"
-
 
     else:
 
@@ -2555,14 +2543,11 @@ async def build_upcoming_embed(
             or "Untitled"
         )
 
-
         date_string = item.get(
             "first_air_date"
         )
 
-
-        media_label = "TV"
-
+        media_label = "SERIES"
 
     page_url = (
         f"{TMDB_WEB_URL}/"
@@ -2570,23 +2555,19 @@ async def build_upcoming_embed(
         f"{tmdb_id}"
     )
 
-
     genre_text = format_genres(
         details
     )
 
-
     cast_text = format_cast(
         details
     )
-
 
     overview = (
         details.get("overview")
         or item.get("overview")
         or "No synopsis is currently available."
     ).strip()
-
 
     if len(overview) > 650:
 
@@ -2595,20 +2576,17 @@ async def build_upcoming_embed(
             + "..."
         )
 
-
     rating = float(
         details.get("vote_average")
         or item.get("vote_average")
         or 0
     )
 
-
     vote_count = int(
         details.get("vote_count")
         or item.get("vote_count")
         or 0
     )
-
 
     if media_type == "movie":
 
@@ -2617,21 +2595,18 @@ async def build_upcoming_embed(
             "movie"
         )
 
-
         metadata_lines = [
-            f"🏷️ *{genre_text}*",
-            f"🎭 **{cast_text}**",
-            f"🕒 **{runtime_text}**",
+            f"ð·ï¸ *{genre_text}*",
+            f"ð­ **{cast_text}**",
+            f"ð **{runtime_text}**",
         ]
-
 
     else:
 
         metadata_lines = [
-            f"🏷️ *{genre_text}*",
-            f"🎭 **{cast_text}**",
+            f"ð·ï¸ *{genre_text}*",
+            f"ð­ **{cast_text}**",
         ]
-
 
         availability = (
             format_tv_availability(
@@ -2639,27 +2614,23 @@ async def build_upcoming_embed(
             )
         )
 
-
         if availability:
 
             metadata_lines.append(
-                f"📺 **{availability}**"
+                f"ðº **{availability}**"
             )
-
 
     metadata = "\n".join(
         metadata_lines
     )
 
-
     description = (
         f"{metadata}\n\n"
         f"{overview}\n\n"
-        f"📅 **{format_release_date(date_string)}**\n"
-        f"⏳ **{format_countdown(date_string)}**\n"
+        f"ð **{format_release_date(date_string)}**\n"
+        f"â³ **{format_countdown(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
-
 
     embed = discord.Embed(
         title=title,
@@ -2672,20 +2643,17 @@ async def build_upcoming_embed(
         )
     )
 
-
     embed.set_author(
         name=(
-            f"PREMIEREBOT  •  "
+            f"PREMIEREBOT  â¢  "
             f"{media_label}"
         )
     )
-
 
     poster_path = (
         details.get("poster_path")
         or item.get("poster_path")
     )
-
 
     if poster_path:
 
@@ -2695,7 +2663,6 @@ async def build_upcoming_embed(
                 f"{poster_path}"
             )
         )
-
 
     if (
         media_type == "tv"
@@ -2707,17 +2674,15 @@ async def build_upcoming_embed(
         embed.set_footer(
             text=(
                 "Data provided by TMDb "
-                "• Availability powered by JustWatch"
+                "â¢ Availability powered by JustWatch"
             )
         )
-
 
     else:
 
         embed.set_footer(
             text="Data provided by TMDb"
         )
-
 
     return embed
 
@@ -2732,20 +2697,17 @@ async def build_game_upcoming_embed(
         or "Untitled Game"
     )
 
-
     release_timestamp = (
         game.get(
             "_game_release_date"
         )
     )
 
-
     summary = (
         game.get("summary")
         or game.get("storyline")
         or "No synopsis is currently available."
     ).strip()
-
 
     if len(summary) > 650:
 
@@ -2754,16 +2716,13 @@ async def build_game_upcoming_embed(
             + "..."
         )
 
-
     genre_text = format_game_genres(
         game
     )
 
-
     company_text = format_game_companies(
         game
     )
-
 
     platform_text = format_game_platforms(
         game,
@@ -2773,29 +2732,25 @@ async def build_game_upcoming_embed(
         )
     )
 
-
     metadata = "\n".join(
         [
-            f"🏷️ *{genre_text}*",
-            f"🏢 **{company_text}**",
-            f"🎮 **{platform_text}**",
+            f"ð·ï¸ *{genre_text}*",
+            f"ð¢ **{company_text}**",
+            f"ð® **{platform_text}**",
         ]
     )
-
 
     date_string = unix_to_date_string(
         release_timestamp
     )
 
-
     description = (
         f"{metadata}\n\n"
         f"{summary}\n\n"
-        f"📅 **{format_unix_date(release_timestamp)}**\n"
-        f"⏳ **{format_countdown(date_string)}**\n"
+        f"ð **{format_unix_date(release_timestamp)}**\n"
+        f"â³ **{format_countdown(date_string)}**\n"
         f"{game_score_meter(game)}"
     )
-
 
     embed = discord.Embed(
         title=title,
@@ -2808,16 +2763,13 @@ async def build_game_upcoming_embed(
         )
     )
 
-
     embed.set_author(
-        name="PREMIEREBOT  •  GAME"
+        name="PREMIEREBOT  â¢  GAME"
     )
-
 
     cover_url = igdb_cover_url(
         game
     )
-
 
     if cover_url:
 
@@ -2825,11 +2777,9 @@ async def build_game_upcoming_embed(
             url=cover_url
         )
 
-
     embed.set_footer(
         text="Game data provided by IGDB"
     )
-
 
     return embed
 
@@ -2846,17 +2796,14 @@ async def build_search_embed(
         "_media_type"
     )
 
-
     tmdb_id = item.get(
         "id"
     )
-
 
     details = await get_details(
         media_type,
         tmdb_id
     )
-
 
     if media_type == "movie":
 
@@ -2866,15 +2813,12 @@ async def build_search_embed(
             or "Untitled"
         )
 
-
         date_string = (
             details.get("release_date")
             or item.get("release_date")
         )
 
-
         media_label = "MOVIE"
-
 
     else:
 
@@ -2884,23 +2828,17 @@ async def build_search_embed(
             or "Untitled"
         )
 
-
         date_string = (
             details.get("first_air_date")
             or item.get("first_air_date")
         )
 
-
-        media_label = "TV"
-
+        media_label = "SERIES"
 
     year = ""
 
-
     if date_string:
-
         year = date_string[:4]
-
 
     display_title = (
         f"{title} ({year})"
@@ -2908,29 +2846,24 @@ async def build_search_embed(
         else title
     )
 
-
     page_url = (
         f"{TMDB_WEB_URL}/"
         f"{media_type}/"
         f"{tmdb_id}"
     )
 
-
     genre_text = format_genres(
         details
     )
-
 
     cast_text = format_cast(
         details
     )
 
-
     runtime_text = format_runtime(
         details,
         media_type
     )
-
 
     availability = (
         format_search_availability(
@@ -2938,13 +2871,11 @@ async def build_search_embed(
         )
     )
 
-
     overview = (
         details.get("overview")
         or item.get("overview")
         or "No synopsis is currently available."
     ).strip()
-
 
     if len(overview) > 650:
 
@@ -2953,13 +2884,11 @@ async def build_search_embed(
             + "..."
         )
 
-
     rating = float(
         details.get("vote_average")
         or item.get("vote_average")
         or 0
     )
-
 
     vote_count = int(
         details.get("vote_count")
@@ -2967,33 +2896,28 @@ async def build_search_embed(
         or 0
     )
 
-
     metadata_lines = [
-        f"🏷️ *{genre_text}*",
-        f"🎭 **{cast_text}**",
-        f"🕒 **{runtime_text}**",
+        f"ð·ï¸ *{genre_text}*",
+        f"ð­ **{cast_text}**",
+        f"ð **{runtime_text}**",
     ]
-
 
     if availability:
 
         metadata_lines.append(
-            f"📺 **{availability}**"
+            f"ðº **{availability}**"
         )
-
 
     metadata = "\n".join(
         metadata_lines
     )
 
-
     description = (
         f"{metadata}\n\n"
         f"{overview}\n\n"
-        f"📅 **{format_release_date(date_string)}**\n"
+        f"ð **{format_release_date(date_string)}**\n"
         f"{score_meter(rating, vote_count)}"
     )
-
 
     embed = discord.Embed(
         title=display_title,
@@ -3006,20 +2930,17 @@ async def build_search_embed(
         )
     )
 
-
     embed.set_author(
         name=(
-            f"PREMIEREBOT  •  "
+            f"PREMIEREBOT  â¢  "
             f"{media_label}"
         )
     )
-
 
     poster_path = (
         details.get("poster_path")
         or item.get("poster_path")
     )
-
 
     if poster_path:
 
@@ -3030,23 +2951,20 @@ async def build_search_embed(
             )
         )
 
-
     if availability:
 
         embed.set_footer(
             text=(
                 "Data provided by TMDb "
-                "• Availability powered by JustWatch"
+                "â¢ Availability powered by JustWatch"
             )
         )
-
 
     else:
 
         embed.set_footer(
             text="Data provided by TMDb"
         )
-
 
     return embed
 
@@ -3061,14 +2979,12 @@ async def build_game_search_embed(
         or "Untitled Game"
     )
 
-
     release_timestamp = (
         get_game_release_timestamp(
             game,
             selected_platform
         )
     )
-
 
     if not release_timestamp:
 
@@ -3078,9 +2994,7 @@ async def build_game_search_embed(
             )
         )
 
-
     year = ""
-
 
     if release_timestamp:
 
@@ -3091,36 +3005,30 @@ async def build_game_search_embed(
             "%Y"
         )
 
-
     display_title = (
         f"{title} ({year})"
         if year
         else title
     )
 
-
     genre_text = format_game_genres(
         game
     )
 
-
     company_text = format_game_companies(
         game
     )
-
 
     platform_text = format_game_platforms(
         game,
         selected_platform
     )
 
-
     summary = (
         game.get("summary")
         or game.get("storyline")
         or "No synopsis is currently available."
     ).strip()
-
 
     if len(summary) > 650:
 
@@ -3129,35 +3037,30 @@ async def build_game_search_embed(
             + "..."
         )
 
-
     metadata = "\n".join(
         [
-            f"🏷️ *{genre_text}*",
-            f"🏢 **{company_text}**",
-            f"🎮 **{platform_text}**",
+            f"ð·ï¸ *{genre_text}*",
+            f"ð¢ **{company_text}**",
+            f"ð® **{platform_text}**",
         ]
     )
-
 
     description = (
         f"{metadata}\n\n"
         f"{summary}"
     )
 
-
     if release_timestamp:
 
         description += (
             f"\n\n"
-            f"📅 **{format_unix_date(release_timestamp)}**"
+            f"ð **{format_unix_date(release_timestamp)}**"
         )
-
 
     description += (
         f"\n"
         f"{game_score_meter(game)}"
     )
-
 
     embed = discord.Embed(
         title=display_title,
@@ -3170,16 +3073,13 @@ async def build_game_search_embed(
         )
     )
 
-
     embed.set_author(
-        name="PREMIEREBOT  •  GAME"
+        name="PREMIEREBOT  â¢  GAME"
     )
-
 
     cover_url = igdb_cover_url(
         game
     )
-
 
     if cover_url:
 
@@ -3187,11 +3087,9 @@ async def build_game_search_embed(
             url=cover_url
         )
 
-
     embed.set_footer(
         text="Game data provided by IGDB"
     )
-
 
     return embed
 
@@ -3208,22 +3106,18 @@ async def get_future_countdown_item(
         timezone.utc
     ).date()
 
-
     for item in results:
 
         media_type = item.get(
             "_media_type"
         )
 
-
         tmdb_id = item.get(
             "id"
         )
 
-
         if not tmdb_id:
             continue
-
 
         try:
 
@@ -3231,7 +3125,6 @@ async def get_future_countdown_item(
                 media_type,
                 tmdb_id
             )
-
 
             if media_type == "movie":
 
@@ -3244,10 +3137,8 @@ async def get_future_countdown_item(
                     )
                 )
 
-
                 if not original_date_string:
                     continue
-
 
                 original_release_date = (
                     datetime.strptime(
@@ -3256,14 +3147,11 @@ async def get_future_countdown_item(
                     ).date()
                 )
 
-
                 if (
                     original_release_date
                     < today
                 ):
-
                     continue
-
 
                 date_string = (
                     await get_us_movie_release_date(
@@ -3271,13 +3159,10 @@ async def get_future_countdown_item(
                     )
                 )
 
-
                 if not date_string:
-
                     date_string = (
                         original_date_string
                     )
-
 
             else:
 
@@ -3290,10 +3175,8 @@ async def get_future_countdown_item(
                     )
                 )
 
-
                 if not date_string:
                     continue
-
 
                 first_air_date = (
                     datetime.strptime(
@@ -3302,10 +3185,8 @@ async def get_future_countdown_item(
                     ).date()
                 )
 
-
                 if first_air_date < today:
                     continue
-
 
             countdown_date = (
                 datetime.strptime(
@@ -3314,16 +3195,13 @@ async def get_future_countdown_item(
                 ).date()
             )
 
-
             if countdown_date < today:
                 continue
-
 
             return (
                 item,
                 date_string
             )
-
 
         except Exception as error:
 
@@ -3332,7 +3210,6 @@ async def get_future_countdown_item(
             )
 
             continue
-
 
     return None
 
@@ -3352,16 +3229,13 @@ def get_future_game_countdown_item(
             )
         )
 
-
         if not timestamp:
             continue
-
 
         return (
             game,
             timestamp
         )
-
 
     return None
 
@@ -3375,17 +3249,14 @@ async def build_countdown_embed(
         "_media_type"
     )
 
-
     tmdb_id = item.get(
         "id"
     )
-
 
     details = await get_details(
         media_type,
         tmdb_id
     )
-
 
     if media_type == "movie":
 
@@ -3395,9 +3266,7 @@ async def build_countdown_embed(
             or "Untitled"
         )
 
-
         media_label = "MOVIE"
-
 
     else:
 
@@ -3407,9 +3276,7 @@ async def build_countdown_embed(
             or "Untitled"
         )
 
-
-        media_label = "TV"
-
+        media_label = "SERIES"
 
     page_url = (
         f"{TMDB_WEB_URL}/"
@@ -3417,12 +3284,10 @@ async def build_countdown_embed(
         f"{tmdb_id}"
     )
 
-
     description = (
-        f"📅 **{format_release_date(date_string)}**\n"
-        f"⏳ **{format_exact_countdown(date_string)}**"
+        f"ð **{format_release_date(date_string)}**\n"
+        f"â³ **{format_exact_countdown(date_string)}**"
     )
-
 
     embed = discord.Embed(
         title=title,
@@ -3435,20 +3300,17 @@ async def build_countdown_embed(
         )
     )
 
-
     embed.set_author(
         name=(
-            f"PREMIEREBOT  •  "
+            f"PREMIEREBOT  â¢  "
             f"{media_label} COUNTDOWN"
         )
     )
-
 
     poster_path = (
         details.get("poster_path")
         or item.get("poster_path")
     )
-
 
     if poster_path:
 
@@ -3459,11 +3321,9 @@ async def build_countdown_embed(
             )
         )
 
-
     embed.set_footer(
         text="Data provided by TMDb"
     )
-
 
     return embed
 
@@ -3479,7 +3339,6 @@ async def build_game_countdown_embed(
         or "Untitled Game"
     )
 
-
     platform_text = (
         selected_platform
         or format_game_platforms(
@@ -3487,13 +3346,11 @@ async def build_game_countdown_embed(
         )
     )
 
-
     description = (
-        f"🎮 **{platform_text}**\n"
-        f"📅 **{format_unix_date(timestamp)}**\n"
-        f"⏳ **{format_game_exact_countdown(timestamp)}**"
+        f"ð® **{platform_text}**\n"
+        f"ð **{format_unix_date(timestamp)}**\n"
+        f"â³ **{format_game_exact_countdown(timestamp)}**"
     )
-
 
     embed = discord.Embed(
         title=title,
@@ -3506,20 +3363,17 @@ async def build_game_countdown_embed(
         )
     )
 
-
     embed.set_author(
         name=(
-            "PREMIEREBOT  •  "
+            "PREMIEREBOT  â¢  "
             "GAME COUNTDOWN"
         )
     )
-
 
     cover_url = igdb_cover_url(
         game,
         thumbnail=True
     )
-
 
     if cover_url:
 
@@ -3527,11 +3381,9 @@ async def build_game_countdown_embed(
             url=cover_url
         )
 
-
     embed.set_footer(
         text="Game data provided by IGDB"
     )
-
 
     return embed
 
@@ -3555,7 +3407,6 @@ class ReleaseBrowser(
             timeout=300
         )
 
-
         self.results = results
         self.media_type = media_type
         self.requester_id = requester_id
@@ -3566,9 +3417,7 @@ class ReleaseBrowser(
             results
         )
 
-
         self.update_buttons()
-
 
     def update_buttons(
         self
@@ -3578,22 +3427,18 @@ class ReleaseBrowser(
             self.total_pages > 1
         )
 
-
         self.previous_button.disabled = (
             not has_multiple_pages
         )
-
 
         self.next_button.disabled = (
             not has_multiple_pages
         )
 
-
         self.page_button.label = (
             f"{self.page + 1} "
             f"/ {self.total_pages}"
         )
-
 
     async def interaction_check(
         self,
@@ -3613,9 +3458,7 @@ class ReleaseBrowser(
 
             return False
 
-
         return True
-
 
     async def get_current_embed(
         self
@@ -3625,16 +3468,14 @@ class ReleaseBrowser(
             self.page
         ]
 
-
         return await build_upcoming_embed(
             item,
             self.media_type
         )
 
-
     @discord.ui.button(
         label="Previous",
-        emoji="◀️",
+        emoji="âï¸",
         style=discord.ButtonStyle.secondary
     )
     async def previous_button(
@@ -3647,18 +3488,14 @@ class ReleaseBrowser(
             self.page - 1
         ) % self.total_pages
 
-
         self.update_buttons()
 
-
         embed = await self.get_current_embed()
-
 
         await interaction.response.edit_message(
             embed=embed,
             view=self
         )
-
 
     @discord.ui.button(
         label="1 / 1",
@@ -3673,10 +3510,9 @@ class ReleaseBrowser(
 
         pass
 
-
     @discord.ui.button(
         label="Next",
-        emoji="▶️",
+        emoji="â¶ï¸",
         style=discord.ButtonStyle.secondary
     )
     async def next_button(
@@ -3689,12 +3525,9 @@ class ReleaseBrowser(
             self.page + 1
         ) % self.total_pages
 
-
         self.update_buttons()
 
-
         embed = await self.get_current_embed()
-
 
         await interaction.response.edit_message(
             embed=embed,
@@ -3716,7 +3549,6 @@ class SearchBrowser(
             timeout=300
         )
 
-
         self.results = results
         self.requester_id = requester_id
 
@@ -3726,9 +3558,7 @@ class SearchBrowser(
             results
         )
 
-
         self.update_buttons()
-
 
     def update_buttons(
         self
@@ -3738,22 +3568,18 @@ class SearchBrowser(
             self.total_pages > 1
         )
 
-
         self.previous_button.disabled = (
             not has_multiple_pages
         )
-
 
         self.next_button.disabled = (
             not has_multiple_pages
         )
 
-
         self.page_button.label = (
             f"{self.page + 1} "
             f"/ {self.total_pages}"
         )
-
 
     async def interaction_check(
         self,
@@ -3773,9 +3599,7 @@ class SearchBrowser(
 
             return False
 
-
         return True
-
 
     async def get_current_embed(
         self
@@ -3785,15 +3609,13 @@ class SearchBrowser(
             self.page
         ]
 
-
         return await build_search_embed(
             item
         )
 
-
     @discord.ui.button(
         label="Previous",
-        emoji="◀️",
+        emoji="âï¸",
         style=discord.ButtonStyle.secondary
     )
     async def previous_button(
@@ -3806,18 +3628,14 @@ class SearchBrowser(
             self.page - 1
         ) % self.total_pages
 
-
         self.update_buttons()
 
-
         embed = await self.get_current_embed()
-
 
         await interaction.response.edit_message(
             embed=embed,
             view=self
         )
-
 
     @discord.ui.button(
         label="1 / 1",
@@ -3832,10 +3650,9 @@ class SearchBrowser(
 
         pass
 
-
     @discord.ui.button(
         label="Next",
-        emoji="▶️",
+        emoji="â¶ï¸",
         style=discord.ButtonStyle.secondary
     )
     async def next_button(
@@ -3848,12 +3665,9 @@ class SearchBrowser(
             self.page + 1
         ) % self.total_pages
 
-
         self.update_buttons()
 
-
         embed = await self.get_current_embed()
-
 
         await interaction.response.edit_message(
             embed=embed,
@@ -3880,7 +3694,6 @@ class GameReleaseBrowser(
             timeout=300
         )
 
-
         self.results = results
         self.requester_id = requester_id
         self.platform_name = platform_name
@@ -3891,9 +3704,7 @@ class GameReleaseBrowser(
             results
         )
 
-
         self.update_buttons()
-
 
     def update_buttons(
         self
@@ -3903,22 +3714,18 @@ class GameReleaseBrowser(
             self.total_pages > 1
         )
 
-
         self.previous_button.disabled = (
             not multiple
         )
-
 
         self.next_button.disabled = (
             not multiple
         )
 
-
         self.page_button.label = (
             f"{self.page + 1} "
             f"/ {self.total_pages}"
         )
-
 
     async def interaction_check(
         self,
@@ -3938,9 +3745,7 @@ class GameReleaseBrowser(
 
             return False
 
-
         return True
-
 
     async def get_current_embed(
         self
@@ -3950,16 +3755,14 @@ class GameReleaseBrowser(
             self.page
         ]
 
-
         return await build_game_upcoming_embed(
             game,
             self.platform_name
         )
 
-
     @discord.ui.button(
         label="Previous",
-        emoji="◀️",
+        emoji="âï¸",
         style=discord.ButtonStyle.secondary
     )
     async def previous_button(
@@ -3972,18 +3775,14 @@ class GameReleaseBrowser(
             self.page - 1
         ) % self.total_pages
 
-
         self.update_buttons()
 
-
         embed = await self.get_current_embed()
-
 
         await interaction.response.edit_message(
             embed=embed,
             view=self
         )
-
 
     @discord.ui.button(
         label="1 / 1",
@@ -3998,10 +3797,9 @@ class GameReleaseBrowser(
 
         pass
 
-
     @discord.ui.button(
         label="Next",
-        emoji="▶️",
+        emoji="â¶ï¸",
         style=discord.ButtonStyle.secondary
     )
     async def next_button(
@@ -4014,12 +3812,9 @@ class GameReleaseBrowser(
             self.page + 1
         ) % self.total_pages
 
-
         self.update_buttons()
 
-
         embed = await self.get_current_embed()
-
 
         await interaction.response.edit_message(
             embed=embed,
@@ -4042,7 +3837,6 @@ class GameSearchBrowser(
             timeout=300
         )
 
-
         self.results = results
         self.requester_id = requester_id
         self.platform_name = platform_name
@@ -4053,9 +3847,7 @@ class GameSearchBrowser(
             results
         )
 
-
         self.update_buttons()
-
 
     def update_buttons(
         self
@@ -4065,22 +3857,18 @@ class GameSearchBrowser(
             self.total_pages > 1
         )
 
-
         self.previous_button.disabled = (
             not multiple
         )
-
 
         self.next_button.disabled = (
             not multiple
         )
 
-
         self.page_button.label = (
             f"{self.page + 1} "
             f"/ {self.total_pages}"
         )
-
 
     async def interaction_check(
         self,
@@ -4100,9 +3888,7 @@ class GameSearchBrowser(
 
             return False
 
-
         return True
-
 
     async def get_current_embed(
         self
@@ -4112,16 +3898,14 @@ class GameSearchBrowser(
             self.page
         ]
 
-
         return await build_game_search_embed(
             game,
             self.platform_name
         )
 
-
     @discord.ui.button(
         label="Previous",
-        emoji="◀️",
+        emoji="âï¸",
         style=discord.ButtonStyle.secondary
     )
     async def previous_button(
@@ -4134,18 +3918,14 @@ class GameSearchBrowser(
             self.page - 1
         ) % self.total_pages
 
-
         self.update_buttons()
 
-
         embed = await self.get_current_embed()
-
 
         await interaction.response.edit_message(
             embed=embed,
             view=self
         )
-
 
     @discord.ui.button(
         label="1 / 1",
@@ -4160,10 +3940,9 @@ class GameSearchBrowser(
 
         pass
 
-
     @discord.ui.button(
         label="Next",
-        emoji="▶️",
+        emoji="â¶ï¸",
         style=discord.ButtonStyle.secondary
     )
     async def next_button(
@@ -4176,12 +3955,9 @@ class GameSearchBrowser(
             self.page + 1
         ) % self.total_pages
 
-
         self.update_buttons()
 
-
         embed = await self.get_current_embed()
-
 
         await interaction.response.edit_message(
             embed=embed,
@@ -4195,12 +3971,12 @@ class GameSearchBrowser(
 
 @client.tree.command(
     name="upcoming",
-    description="Browse upcoming movie, TV, or game releases."
+    description="Browse upcoming movie, game, or series releases."
 )
 @app_commands.describe(
-    media_type="Choose Movie, TV, or Game.",
+    media_type="Choose Movie, Game, or Series.",
     timeframe="Choose week or month.",
-    platform="Optional game platform."
+    platform="Optional game platform. Start typing to search IGDB."
 )
 @app_commands.rename(
     media_type="type",
@@ -4217,14 +3993,16 @@ class GameSearchBrowser(
             name="Month",
             value="month"
         ),
-    ],
-    platform=PLATFORM_CHOICES
+    ]
+)
+@app_commands.autocomplete(
+    platform=platform_autocomplete
 )
 async def upcoming(
     interaction: discord.Interaction,
     media_type: app_commands.Choice[str],
     timeframe: app_commands.Choice[str],
-    platform: app_commands.Choice[str] | None = None
+    platform: str | None = None
 ):
 
     if (
@@ -4240,16 +4018,13 @@ async def upcoming(
 
         return
 
-
     await interaction.response.defer()
 
-
     platform_name = (
-        platform.value
+        platform
         if platform
         else None
     )
-
 
     if media_type.value == "game":
 
@@ -4273,7 +4048,6 @@ async def upcoming(
 
             return
 
-
         if not results:
 
             period = (
@@ -4283,8 +4057,8 @@ async def upcoming(
             )
 
             platform_text = (
-                f" for **{platform.name}**"
-                if platform
+                f" for **{platform_name}**"
+                if platform_name
                 else ""
             )
 
@@ -4295,13 +4069,11 @@ async def upcoming(
 
             return
 
-
         view = GameReleaseBrowser(
             results=results,
             requester_id=interaction.user.id,
             platform_name=platform_name
         )
-
 
         try:
 
@@ -4320,7 +4092,6 @@ async def upcoming(
 
             return
 
-
         await interaction.followup.send(
             embed=embed,
             view=view
@@ -4328,8 +4099,6 @@ async def upcoming(
 
         return
 
-
-    # Existing TMDb branch.
     try:
 
         results = await get_upcoming(
@@ -4350,7 +4119,6 @@ async def upcoming(
 
         return
 
-
     if not results:
 
         await interaction.followup.send(
@@ -4360,13 +4128,11 @@ async def upcoming(
 
         return
 
-
     view = ReleaseBrowser(
         results=results,
         media_type=media_type.value,
         requester_id=interaction.user.id
     )
-
 
     try:
 
@@ -4385,7 +4151,6 @@ async def upcoming(
 
         return
 
-
     await interaction.followup.send(
         embed=embed,
         view=view
@@ -4398,25 +4163,27 @@ async def upcoming(
 
 @client.tree.command(
     name="search",
-    description="Search for a movie, TV show, or game."
+    description="Search for a movie, game, or series."
 )
 @app_commands.describe(
-    media_type="Choose Movie, TV, or Game.",
+    media_type="Choose Movie, Game, or Series.",
     title="Title to search for.",
-    platform="Optional game platform."
+    platform="Optional game platform. Start typing to search IGDB."
 )
 @app_commands.rename(
     media_type="type"
 )
 @app_commands.choices(
-    media_type=TYPE_CHOICES,
-    platform=PLATFORM_CHOICES
+    media_type=TYPE_CHOICES
+)
+@app_commands.autocomplete(
+    platform=platform_autocomplete
 )
 async def search(
     interaction: discord.Interaction,
     media_type: app_commands.Choice[str],
     title: str,
-    platform: app_commands.Choice[str] | None = None
+    platform: str | None = None
 ):
 
     if (
@@ -4432,16 +4199,13 @@ async def search(
 
         return
 
-
     await interaction.response.defer()
 
-
     platform_name = (
-        platform.value
+        platform
         if platform
         else None
     )
-
 
     if media_type.value == "game":
 
@@ -4465,12 +4229,11 @@ async def search(
 
             return
 
-
         if not results:
 
             platform_text = (
-                f" on **{platform.name}**"
-                if platform
+                f" on **{platform_name}**"
+                if platform_name
                 else ""
             )
 
@@ -4482,13 +4245,11 @@ async def search(
 
             return
 
-
         view = GameSearchBrowser(
             results=results,
             requester_id=interaction.user.id,
             platform_name=platform_name
         )
-
 
         try:
 
@@ -4507,7 +4268,6 @@ async def search(
 
             return
 
-
         await interaction.followup.send(
             embed=embed,
             view=view
@@ -4515,8 +4275,6 @@ async def search(
 
         return
 
-
-    # Existing TMDb branch.
     try:
 
         results = await search_titles(
@@ -4537,7 +4295,6 @@ async def search(
 
         return
 
-
     if not results:
 
         await interaction.followup.send(
@@ -4547,12 +4304,10 @@ async def search(
 
         return
 
-
     view = SearchBrowser(
         results=results,
         requester_id=interaction.user.id
     )
-
 
     try:
 
@@ -4571,7 +4326,6 @@ async def search(
 
         return
 
-
     await interaction.followup.send(
         embed=embed,
         view=view
@@ -4584,25 +4338,27 @@ async def search(
 
 @client.tree.command(
     name="countdown",
-    description="Countdown to an upcoming movie, TV, or game release."
+    description="Countdown to an upcoming movie, game, or series release."
 )
 @app_commands.describe(
-    media_type="Choose Movie, TV, or Game.",
+    media_type="Choose Movie, Game, or Series.",
     title="Upcoming title.",
-    platform="Optional game platform."
+    platform="Optional game platform. Start typing to search IGDB."
 )
 @app_commands.rename(
     media_type="type"
 )
 @app_commands.choices(
-    media_type=TYPE_CHOICES,
-    platform=PLATFORM_CHOICES
+    media_type=TYPE_CHOICES
+)
+@app_commands.autocomplete(
+    platform=platform_autocomplete
 )
 async def countdown(
     interaction: discord.Interaction,
     media_type: app_commands.Choice[str],
     title: str,
-    platform: app_commands.Choice[str] | None = None
+    platform: str | None = None
 ):
 
     if (
@@ -4618,16 +4374,13 @@ async def countdown(
 
         return
 
-
     await interaction.response.defer()
 
-
     platform_name = (
-        platform.value
+        platform
         if platform
         else None
     )
-
 
     if media_type.value == "game":
 
@@ -4651,7 +4404,6 @@ async def countdown(
 
             return
 
-
         if not results:
 
             await interaction.followup.send(
@@ -4661,7 +4413,6 @@ async def countdown(
 
             return
 
-
         future_match = (
             get_future_game_countdown_item(
                 results,
@@ -4669,12 +4420,11 @@ async def countdown(
             )
         )
 
-
         if not future_match:
 
             platform_text = (
-                f" for **{platform.name}**"
-                if platform
+                f" for **{platform_name}**"
+                if platform_name
                 else ""
             )
 
@@ -4686,11 +4436,9 @@ async def countdown(
 
             return
 
-
         game, timestamp = (
             future_match
         )
-
 
         try:
 
@@ -4715,15 +4463,12 @@ async def countdown(
 
             return
 
-
         await interaction.followup.send(
             embed=embed
         )
 
         return
 
-
-    # Existing TMDb branch.
     try:
 
         results = await search_titles(
@@ -4744,7 +4489,6 @@ async def countdown(
 
         return
 
-
     if not results:
 
         await interaction.followup.send(
@@ -4754,28 +4498,24 @@ async def countdown(
 
         return
 
-
     future_match = (
         await get_future_countdown_item(
             results
         )
     )
 
-
     if not future_match:
 
         await interaction.followup.send(
-            f"No unreleased movie or TV show "
+            f"No unreleased movie or series "
             f"matching **{title}** was found."
         )
 
         return
 
-
     result, date_string = (
         future_match
     )
-
 
     try:
 
@@ -4796,7 +4536,6 @@ async def countdown(
         )
 
         return
-
 
     await interaction.followup.send(
         embed=embed
