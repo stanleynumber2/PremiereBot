@@ -11,7 +11,7 @@ from discord import app_commands
 from howlongtobeatpy import HowLongToBeat
 
 
-print("MediaDB code version: 1.6.6")
+print("MediaDB code version: 1.6.7")
 
 # 1.6.4 is based on the known-good 1.6.3 command/data logic.
 # The only intended feature change is local platform autocomplete.
@@ -4632,22 +4632,22 @@ async def howlong(interaction: discord.Interaction, game: str):
     embed = discord.Embed(
         title=result.game_name or game,
         url=result.game_web_link or None,
-        description=f"ð® **{format_hltb_platforms(result.profile_platforms)}**",
+        description=f"\U0001f3ae **{format_hltb_platforms(result.profile_platforms)}**",
         color=discord.Color.from_rgb(40, 105, 150)
     )
 
     embed.add_field(
-        name="ð Main Story",
+        name="\U0001f4d6 Main Story",
         value=f"**{format_hltb_hours(result.main_story)}**",
         inline=False
     )
     embed.add_field(
-        name="â¨ Main Story + Extras",
+        name="\U00002728 Main Story + Extras",
         value=f"**{format_hltb_hours(result.main_extra)}**",
         inline=False
     )
     embed.add_field(
-        name="ð Completionist",
+        name="\U0001f3c6 Completionist",
         value=f"**{format_hltb_hours(result.completionist)}**",
         inline=False
     )
