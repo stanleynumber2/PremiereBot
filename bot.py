@@ -11,7 +11,7 @@ from discord import app_commands
 from howlongtobeatpy import HowLongToBeat
 
 
-print("MediaDB code version: 1.6.5")
+print("MediaDB code version: 1.6.6")
 
 # 1.6.4 is based on the known-good 1.6.3 command/data logic.
 # The only intended feature change is local platform autocomplete.
@@ -4572,7 +4572,7 @@ def format_hltb_platforms(platforms) -> str:
     if not platforms:
         return "Platforms unavailable"
     if isinstance(platforms, (list, tuple, set)):
-        text = " â¢ ".join(str(platform) for platform in platforms if platform)
+        text = " \U00002022 ".join(str(platform) for platform in platforms if platform)
     else:
         text = str(platforms)
     return text or "Platforms unavailable"
