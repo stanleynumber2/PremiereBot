@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import time
+from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 
 import aiohttp
@@ -10,7 +11,7 @@ from discord import app_commands
 from howlongtobeatpy import HowLongToBeat
 
 
-print("MediaDB code version: 1.6.4")
+print("MediaDB code version: 1.6.5")
 
 # 1.6.4 is based on the known-good 1.6.3 command/data logic.
 # The only intended feature change is local platform autocomplete.
@@ -961,25 +962,163 @@ def game_score_meter(
 # TITLE NORMALIZATION
 # =========================================================
 
+ROMAN_NUMERALS = {
+    "i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5,
+    "vi": 6, "vii": 7, "viii": 8, "ix": 9, "x": 10,
+    "xi": 11, "xii": 12, "xiii": 13, "xiv": 14, "xv": 15,
+    "xvi": 16, "xvii": 17, "xviii": 18, "xix": 19, "xx": 20,
+}
+
+# Small franchise expansions handle shorthand that no generic matcher can
+# reverse on its own (for example, "ff" -> "Final Fantasy"). Everything
+# after expansion is ranked generically.
+GAME_ABBREVIATIONS = {
+    "ff": "final fantasy",
+    "gta": "grand theft auto",
+    "rdr": "red dead redemption",
+    "re": "resident evil",
+    "kh": "kingdom hearts",
+    "dmc": "devil may cry",
+    "mgs": "metal gear solid",
+    "gow": "god of war",
+    "ac": "assassins creed",
+    "cod": "call of duty",
+}
+
+SEARCH_NOISE_WORDS = {
+    "the", "a", "an", "and", "of", "for", "edition", "game",
+}
+
+
+def _split_compact_token(token: str) -> list[str]:
+    # ff7 -> ff + 7, gta5 -> gta + 5, re4 -> re + 4
+    match = re.fullmatch(r"([a-z]+)(\d+)", token)
+    if match:
+        return [match.group(1), match.group(2)]
+
+    match = re.fullmatch(r"(\d+)([a-z]+)", token)
+    if match:
+        return [match.group(1), match.group(2)]
+
+    return [token]
+
+
 def normalize_title(
     text: str
 ) -> str:
 
     text = text.lower().strip()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
 
-    text = re.sub(
-        r"[^a-z0-9\s]",
-        "",
-        text
-    )
+    tokens = []
 
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    )
+    for raw_token in text.split():
+        for token in _split_compact_token(raw_token):
+            if token in ROMAN_NUMERALS:
+                token = str(ROMAN_NUMERALS[token])
+            tokens.append(token)
 
-    return text.strip()
+    return " ".join(tokens).strip()
+
+
+def expand_game_query(text: str) -> list[str]:
+    """Return original + generic shorthand expansions, deduplicated."""
+    normalized = normalize_title(text)
+    tokens = normalized.split()
+
+    variants = [text, normalized]
+
+    if tokens:
+        expanded_tokens = []
+        changed = False
+
+        for token in tokens:
+            replacement = GAME_ABBREVIATIONS.get(token)
+            if replacement:
+                expanded_tokens.extend(replacement.split())
+                changed = True
+            else:
+                expanded_tokens.append(token)
+
+        if changed:
+            variants.append(" ".join(expanded_tokens))
+
+    # Keep order, remove empty/duplicate variants.
+    seen = set()
+    final = []
+    for variant in variants:
+        key = normalize_title(variant)
+        if key and key not in seen:
+            seen.add(key)
+            final.append(variant)
+
+    return final
+
+
+def _title_tokens(text: str) -> list[str]:
+    return [
+        token for token in normalize_title(text).split()
+        if token not in SEARCH_NOISE_WORDS
+    ]
+
+
+def _title_acronym_variants(text: str) -> set[str]:
+    tokens = _title_tokens(text)
+    if not tokens:
+        return set()
+
+    parts = []
+    for token in tokens:
+        if token.isdigit():
+            parts.append(token)
+        else:
+            parts.append(token[0])
+
+    # Prefix variants let "ff7" match "Final Fantasy VII Remake" (ff7r).
+    return {"".join(parts[:i]) for i in range(2, len(parts) + 1)}
+
+
+def game_title_match_score(query: str, candidate: str) -> float:
+    """Higher is better. Handles punctuation, numerals, tokens and acronyms."""
+    query_norm = normalize_title(query)
+    candidate_norm = normalize_title(candidate)
+
+    if not query_norm or not candidate_norm:
+        return 0.0
+
+    if query_norm == candidate_norm:
+        return 1000.0
+
+    score = SequenceMatcher(None, query_norm, candidate_norm).ratio() * 100
+
+    if candidate_norm.startswith(query_norm + " "):
+        score += 160
+    elif query_norm in candidate_norm:
+        score += 100
+
+    query_tokens = set(_title_tokens(query))
+    candidate_tokens = set(_title_tokens(candidate))
+
+    if query_tokens:
+        overlap = len(query_tokens & candidate_tokens) / len(query_tokens)
+        score += overlap * 180
+
+    compact_query_tokens = {
+        token for token in query_tokens
+        if re.fullmatch(r"[a-z]+\d+|[a-z]{2,5}", token)
+    }
+    candidate_acronyms = _title_acronym_variants(candidate)
+
+    for compact in compact_query_tokens:
+        # Rejoin split shorthand where useful: "ff 7" -> "ff7".
+        if compact in candidate_acronyms:
+            score += 250
+
+    compact_query = "".join(_title_tokens(query))
+    if compact_query in candidate_acronyms:
+        score += 300
+
+    return score
 
 
 def search_relevance(
@@ -1067,28 +1206,8 @@ def game_search_relevance(
     query: str
 ) -> tuple:
 
-    query_norm = normalize_title(
-        query
-    )
-
-    title_norm = normalize_title(
-        game.get("name")
-        or ""
-    )
-
-    if title_norm == query_norm:
-        match_rank = 0
-
-    elif title_norm.startswith(
-        query_norm + " "
-    ):
-        match_rank = 1
-
-    elif query_norm in title_norm:
-        match_rank = 2
-
-    else:
-        match_rank = 3
+    title = game.get("name") or ""
+    match_score = game_title_match_score(query, title)
 
     rating_count = int(
         game.get("total_rating_count")
@@ -1096,8 +1215,9 @@ def game_search_relevance(
         or 0
     )
 
+    # Sort ascending: strongest text match first, popularity as tie-breaker.
     return (
-        match_rank,
+        -match_score,
         -rating_count
     )
 
@@ -1447,10 +1567,6 @@ async def search_games(
     platform_name: str | None = None
 ) -> list[dict]:
 
-    safe_title = igdb_escape(
-        title
-    )
-
     fields = (
         "id,"
         "name,"
@@ -1472,17 +1588,34 @@ async def search_games(
         "url"
     )
 
-    results = await fetch_igdb(
-        "games",
-        (
-            f'search "{safe_title}"; '
-            f"fields {fields}; "
-            f"limit 25;"
-        )
-    )
+    # Search the user's wording plus any generic shorthand expansion.
+    # Results are merged by IGDB id and ranked locally afterward.
+    merged = {}
+
+    for query_variant in expand_game_query(title):
+        safe_title = igdb_escape(query_variant)
+
+        try:
+            batch = await fetch_igdb(
+                "games",
+                (
+                    f'search "{safe_title}"; '
+                    f"fields {fields}; "
+                    f"limit 25;"
+                )
+            )
+        except Exception as error:
+            print(f"IGDB variant search error ({query_variant}): {error}")
+            continue
+
+        for game in batch:
+            game_id = game.get("id")
+            if game_id is not None:
+                merged[game_id] = game
+
+    results = list(merged.values())
 
     if platform_name:
-
         results = [
             game
             for game in results
@@ -1491,34 +1624,6 @@ async def search_games(
                 platform_name
             )
         ]
-
-    query_norm = normalize_title(
-        title
-    )
-
-    strong_results = []
-
-    for game in results:
-
-        game_title = normalize_title(
-            game.get("name")
-            or ""
-        )
-
-        if (
-            game_title == query_norm
-            or game_title.startswith(
-                query_norm + " "
-            )
-            or query_norm in game_title
-        ):
-
-            strong_results.append(
-                game
-            )
-
-    if strong_results:
-        results = strong_results
 
     results.sort(
         key=lambda game:
@@ -4467,7 +4572,7 @@ def format_hltb_platforms(platforms) -> str:
     if not platforms:
         return "Platforms unavailable"
     if isinstance(platforms, (list, tuple, set)):
-        text = " • ".join(str(platform) for platform in platforms if platform)
+        text = " â¢ ".join(str(platform) for platform in platforms if platform)
     else:
         text = str(platforms)
     return text or "Platforms unavailable"
@@ -4486,10 +4591,23 @@ async def howlong(interaction: discord.Interaction, game: str):
     await interaction.response.defer()
 
     try:
-        results = await HowLongToBeat().async_search(
-            game,
-            similarity_case_sensitive=False
-        )
+        merged_results = {}
+
+        for query_variant in expand_game_query(game):
+            batch = await HowLongToBeat(0.0).async_search(
+                query_variant,
+                similarity_case_sensitive=False
+            )
+
+            for entry in batch:
+                key = (
+                    getattr(entry, "game_id", None)
+                    or getattr(entry, "game_name", "")
+                )
+                merged_results[key] = entry
+
+        results = list(merged_results.values())
+
     except Exception as error:
         print(f"HowLongToBeat search error: {error}")
         await interaction.followup.send(
@@ -4503,27 +4621,33 @@ async def howlong(interaction: discord.Interaction, game: str):
         )
         return
 
-    result = max(results, key=lambda entry: entry.similarity)
+    result = max(
+        results,
+        key=lambda entry: game_title_match_score(
+            game,
+            getattr(entry, "game_name", "")
+        )
+    )
 
     embed = discord.Embed(
         title=result.game_name or game,
         url=result.game_web_link or None,
-        description=f"🎮 **{format_hltb_platforms(result.profile_platforms)}**",
+        description=f"ð® **{format_hltb_platforms(result.profile_platforms)}**",
         color=discord.Color.from_rgb(40, 105, 150)
     )
 
     embed.add_field(
-        name="📖 Main Story",
+        name="ð Main Story",
         value=f"**{format_hltb_hours(result.main_story)}**",
         inline=False
     )
     embed.add_field(
-        name="✨ Main Story + Extras",
+        name="â¨ Main Story + Extras",
         value=f"**{format_hltb_hours(result.main_extra)}**",
         inline=False
     )
     embed.add_field(
-        name="🏆 Completionist",
+        name="ð Completionist",
         value=f"**{format_hltb_hours(result.completionist)}**",
         inline=False
     )
