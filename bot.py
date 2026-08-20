@@ -7,14 +7,14 @@ from datetime import datetime, timedelta, timezone
 import aiohttp
 import discord
 from discord import app_commands
+from howlongtobeatpy import HowLongToBeat
 
 
-print("Release Tracker code version: 1.6.3")
+print("MediaDB code version: 1.6.4")
 
-# 1.6.3 is based on the known-good 6.2.4 command/data logic.
-# Branding updated to Release Tracker.
-# Adds programmatic guild-profile banner upload from RTbanner.png.
-# Existing search/upcoming/countdown/autocomplete logic is otherwise unchanged.
+# 1.6.4 is based on the known-good 1.6.3 command/data logic.
+# The only intended feature change is local platform autocomplete.
+# Autocomplete never contacts IGDB; IGDB is only contacted when a command runs.
 
 
 # =========================================================
@@ -63,14 +63,14 @@ GUILD = discord.Object(id=int(DISCORD_GUILD_ID))
 # DISCORD CLIENT
 # =========================================================
 
-class ReleaseTrackerClient(discord.Client):
+class MediaDBClient(discord.Client):
 
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        print("Release Tracker setup started.")
+        print("MediaDB setup started.")
 
         self.tree.copy_global_to(guild=GUILD)
 
@@ -82,76 +82,10 @@ class ReleaseTrackerClient(discord.Client):
             print(f"Synced: /{command.name}")
 
     async def on_ready(self):
-        print(f"Release Tracker online as {self.user}")
-        await self.update_profile_banner()
-
-    async def update_profile_banner(self):
-        """Upload RTbanner.png as this bot's server-profile banner."""
-        if getattr(self, "_banner_update_attempted", False):
-            return
-
-        self._banner_update_attempted = True
-        banner_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "RTbanner.png",
-        )
-
-        if not os.path.isfile(banner_path):
-            print(
-                "Release Tracker banner skipped: "
-                f"{banner_path} was not found."
-            )
-            return
-
-        try:
-            with open(banner_path, "rb") as banner_file:
-                banner_bytes = banner_file.read()
-
-            if len(banner_bytes) >= 10 * 1024 * 1024:
-                print(
-                    "Release Tracker banner skipped: "
-                    "RTbanner.png must be under 10 MB."
-                )
-                return
-
-            import base64
-            banner_data = (
-                "data:image/png;base64,"
-                + base64.b64encode(banner_bytes).decode("ascii")
-            )
-
-            url = (
-                "https://discord.com/api/v10/guilds/"
-                f"{DISCORD_GUILD_ID}/members/@me"
-            )
-            headers = {
-                "Authorization": f"Bot {DISCORD_TOKEN}",
-                "Content-Type": "application/json",
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.patch(
-                    url,
-                    headers=headers,
-                    json={"banner": banner_data},
-                ) as response:
-                    if response.status == 200:
-                        print(
-                            "Release Tracker banner uploaded "
-                            "successfully from RTbanner.png."
-                        )
-                    else:
-                        error_text = await response.text()
-                        print(
-                            "Release Tracker banner upload failed "
-                            f"({response.status}): {error_text}"
-                        )
-
-        except Exception as error:
-            print(f"Release Tracker banner upload error: {error}")
+        print(f"MediaDB online as {self.user}")
 
 
-client = ReleaseTrackerClient()
+client = MediaDBClient()
 
 
 # =========================================================
@@ -2614,7 +2548,7 @@ async def build_upcoming_embed(
 
     embed.set_author(
         name=(
-            f"PREMIEREBOT  \U00002022  "
+            f"MEDIADB  \U00002022  "
             f"{media_label}"
         )
     )
@@ -2733,7 +2667,7 @@ async def build_game_upcoming_embed(
     )
 
     embed.set_author(
-        name="PREMIEREBOT  \U00002022  GAME"
+        name="MEDIADB  \U00002022  GAME"
     )
 
     cover_url = igdb_cover_url(
@@ -2901,7 +2835,7 @@ async def build_search_embed(
 
     embed.set_author(
         name=(
-            f"PREMIEREBOT  \U00002022  "
+            f"MEDIADB  \U00002022  "
             f"{media_label}"
         )
     )
@@ -3043,7 +2977,7 @@ async def build_game_search_embed(
     )
 
     embed.set_author(
-        name="PREMIEREBOT  \U00002022  GAME"
+        name="MEDIADB  \U00002022  GAME"
     )
 
     cover_url = igdb_cover_url(
@@ -3271,7 +3205,7 @@ async def build_countdown_embed(
 
     embed.set_author(
         name=(
-            f"PREMIEREBOT  \U00002022  "
+            f"MEDIADB  \U00002022  "
             f"{media_label} COUNTDOWN"
         )
     )
@@ -3334,7 +3268,7 @@ async def build_game_countdown_embed(
 
     embed.set_author(
         name=(
-            "PREMIEREBOT  \U00002022  "
+            "MEDIADB  \U00002022  "
             "GAME COUNTDOWN"
         )
     )
@@ -3421,7 +3355,7 @@ class ReleaseBrowser(
 
             await interaction.response.send_message(
                 "Run `/upcoming` to open "
-                "your own Release Tracker browser.",
+                "your own MediaDB browser.",
                 ephemeral=True
             )
 
@@ -3562,7 +3496,7 @@ class SearchBrowser(
 
             await interaction.response.send_message(
                 "Run `/search` to open "
-                "your own Release Tracker search.",
+                "your own MediaDB search.",
                 ephemeral=True
             )
 
@@ -3708,7 +3642,7 @@ class GameReleaseBrowser(
 
             await interaction.response.send_message(
                 "Run `/upcoming` to open "
-                "your own Release Tracker browser.",
+                "your own MediaDB browser.",
                 ephemeral=True
             )
 
@@ -3851,7 +3785,7 @@ class GameSearchBrowser(
 
             await interaction.response.send_message(
                 "Run `/search` to open "
-                "your own Release Tracker search.",
+                "your own MediaDB search.",
                 ephemeral=True
             )
 
@@ -4011,7 +3945,7 @@ async def upcoming(
             )
 
             await interaction.followup.send(
-                "Release Tracker couldn't retrieve "
+                "MediaDB couldn't retrieve "
                 "game release information right now."
             )
 
@@ -4055,7 +3989,7 @@ async def upcoming(
             )
 
             await interaction.followup.send(
-                "Release Tracker found game releases, "
+                "MediaDB found game releases, "
                 "but couldn't load their details."
             )
 
@@ -4082,7 +4016,7 @@ async def upcoming(
         )
 
         await interaction.followup.send(
-            "Release Tracker couldn't retrieve "
+            "MediaDB couldn't retrieve "
             "release information right now."
         )
 
@@ -4114,7 +4048,7 @@ async def upcoming(
         )
 
         await interaction.followup.send(
-            "Release Tracker found releases, "
+            "MediaDB found releases, "
             "but couldn't load their details."
         )
 
@@ -4192,7 +4126,7 @@ async def search(
             )
 
             await interaction.followup.send(
-                "Release Tracker couldn't complete "
+                "MediaDB couldn't complete "
                 "that game search right now."
             )
 
@@ -4231,7 +4165,7 @@ async def search(
             )
 
             await interaction.followup.send(
-                "Release Tracker found a game, "
+                "MediaDB found a game, "
                 "but couldn't load its details."
             )
 
@@ -4258,7 +4192,7 @@ async def search(
         )
 
         await interaction.followup.send(
-            "Release Tracker couldn't complete "
+            "MediaDB couldn't complete "
             "that search right now."
         )
 
@@ -4289,7 +4223,7 @@ async def search(
         )
 
         await interaction.followup.send(
-            "Release Tracker found a result, "
+            "MediaDB found a result, "
             "but couldn't load its details."
         )
 
@@ -4367,7 +4301,7 @@ async def countdown(
             )
 
             await interaction.followup.send(
-                "Release Tracker couldn't search "
+                "MediaDB couldn't search "
                 "for that game right now."
             )
 
@@ -4426,7 +4360,7 @@ async def countdown(
             )
 
             await interaction.followup.send(
-                "Release Tracker found the game, "
+                "MediaDB found the game, "
                 "but couldn't load its countdown."
             )
 
@@ -4452,7 +4386,7 @@ async def countdown(
         )
 
         await interaction.followup.send(
-            "Release Tracker couldn't search "
+            "MediaDB couldn't search "
             "for that title right now."
         )
 
@@ -4500,7 +4434,7 @@ async def countdown(
         )
 
         await interaction.followup.send(
-            "Release Tracker found an upcoming title, "
+            "MediaDB found an upcoming title, "
             "but couldn't load its countdown."
         )
 
@@ -4509,6 +4443,97 @@ async def countdown(
     await interaction.followup.send(
         embed=embed
     )
+
+
+# =========================================================
+# HOWLONGTOBEAT
+# =========================================================
+
+def format_hltb_hours(value) -> str:
+    if value is None:
+        return "No data"
+    try:
+        hours = float(value)
+    except (TypeError, ValueError):
+        return "No data"
+    if hours <= 0:
+        return "No data"
+    if hours.is_integer():
+        return f"{int(hours)} hrs"
+    return f"{hours:.1f} hrs"
+
+
+def format_hltb_platforms(platforms) -> str:
+    if not platforms:
+        return "Platforms unavailable"
+    if isinstance(platforms, (list, tuple, set)):
+        text = " • ".join(str(platform) for platform in platforms if platform)
+    else:
+        text = str(platforms)
+    return text or "Platforms unavailable"
+
+
+# =========================================================
+# /HOWLONG
+# =========================================================
+
+@client.tree.command(
+    name="howlong",
+    description="See how long a game takes to beat."
+)
+@app_commands.describe(game="Game title to search for.")
+async def howlong(interaction: discord.Interaction, game: str):
+    await interaction.response.defer()
+
+    try:
+        results = await HowLongToBeat().async_search(
+            game,
+            similarity_case_sensitive=False
+        )
+    except Exception as error:
+        print(f"HowLongToBeat search error: {error}")
+        await interaction.followup.send(
+            "MediaDB couldn't reach HowLongToBeat right now."
+        )
+        return
+
+    if not results:
+        await interaction.followup.send(
+            f"No HowLongToBeat result was found for **{game}**."
+        )
+        return
+
+    result = max(results, key=lambda entry: entry.similarity)
+
+    embed = discord.Embed(
+        title=result.game_name or game,
+        url=result.game_web_link or None,
+        description=f"🎮 **{format_hltb_platforms(result.profile_platforms)}**",
+        color=discord.Color.from_rgb(40, 105, 150)
+    )
+
+    embed.add_field(
+        name="📖 Main Story",
+        value=f"**{format_hltb_hours(result.main_story)}**",
+        inline=False
+    )
+    embed.add_field(
+        name="✨ Main Story + Extras",
+        value=f"**{format_hltb_hours(result.main_extra)}**",
+        inline=False
+    )
+    embed.add_field(
+        name="🏆 Completionist",
+        value=f"**{format_hltb_hours(result.completionist)}**",
+        inline=False
+    )
+
+    if result.game_image_url:
+        embed.set_thumbnail(url=result.game_image_url)
+
+    embed.set_footer(text="Playtime data provided by HowLongToBeat")
+
+    await interaction.followup.send(embed=embed)
 
 
 client.run(DISCORD_TOKEN)
